@@ -1,101 +1,56 @@
-#include <iostream>
 #include <SDL2/SDL.h>
+#include <iostream>
 #include <SDL2/SDL_image.h>
 
-using namespace std;
+const int WIDTH = 1280;
+const int HEIGHT = 720;
 
-const int SCREEN_WIDTH = 800;
-const int SCREEN_HEIGHT = 600;
-const char* WINDOW_TITLE = "Hello World!";
-
-void logErrorAndExit(const char* msg, const char* error)
+int main(int argv, char* args[])
 {
-    SDL_LogMessage(SDL_LOG_CATEGORY_APPLICATION, SDL_LOG_PRIORITY_ERROR, "%s: %s", msg, error);
-    SDL_Quit();
-}
-
-SDL_Window* initSDL(int SCREEN_WIDTH, int SCREEN_HEIGHT, const char* WINDOW_TITLE)
-{
-    if (SDL_Init(SDL_INIT_EVERYTHING) != 0)
-        logErrorAndExit("SDL_Init", SDL_GetError());
-
-    SDL_Window* window = SDL_CreateWindow(WINDOW_TITLE, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
-    //full screen
-    //window = SDL_CreateWindow(WINDOW_TITLE, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_FULLSCREEN_DESKTOP);
-    if (window == nullptr) logErrorAndExit("CreateWindow", SDL_GetError());
-
-    return window;
-}
-
-SDL_Renderer* createRenderer(SDL_Window* window)
-{
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED |
-                                              SDL_RENDERER_PRESENTVSYNC);
-    //Khi chạy trong máy ảo (ví dụ phòng máy ở trường)
-    //renderer = SDL_CreateSoftwareRenderer(SDL_GetWindowSurface(window));
-
-    if (renderer == nullptr) logErrorAndExit("CreateRenderer", SDL_GetError());
-
-    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
-    SDL_RenderSetLogicalSize(renderer, SCREEN_WIDTH, SCREEN_HEIGHT);
-
-    return renderer;
-}
-
-void quitSDL(SDL_Window* window, SDL_Renderer* renderer)
-{
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
-    SDL_Quit();
-}
-
-void waitUntilKeyPressed()
-{
-    SDL_Event e;
-    while (true) {
-        if ( SDL_PollEvent(&e) != 0 &&
-             (e.type == SDL_KEYDOWN || e.type == SDL_QUIT) )
-            return;
-        SDL_Delay(100);
+    SDL_Surface* windowSurface = nullptr;
+    SDL_Surface* imageSurface = nullptr;
+    if(SDL_Init(SDL_INIT_EVERYTHING) < 0)
+    {
+        std::cout << "couldnt init sdl error: " << SDL_GetError() << std::endl;
+        return 1;
     }
-}
 
-void drawSomething(SDL_Window* window, SDL_Renderer* renderer) {
-    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);   // white
-    SDL_RenderDrawPoint(renderer, SCREEN_WIDTH/2, SCREEN_HEIGHT/2);
-    SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);   // red
-    SDL_RenderDrawLine(renderer, 100, 100, 200, 200);
-    SDL_Rect filled_rect;
-    filled_rect.x = SCREEN_WIDTH - 400;
-    filled_rect.y = SCREEN_HEIGHT - 150;
-    filled_rect.w = 320;
-    filled_rect.h = 100;
-    SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255); // green
-    SDL_RenderFillRect(renderer, &filled_rect);
-}
+    std::string windowTitle = "setup sdl2 with images";
+    SDL_Window* window = SDL_CreateWindow(windowTitle.c_str(), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WIDTH, HEIGHT, SDL_WINDOW_ALLOW_HIGHDPI);
+    windowSurface = SDL_GetWindowSurface(window);
+    if (window == nullptr)
+    {
+        std::cout << "window could not be initialized: ERROR: " << SDL_GetError() << std::endl;
+        return 1;
+    }
 
-int main(int argc, char* argv[])
-{
-    //Khởi tạo môi trường đồ họa
-    SDL_Window* window = initSDL(SCREEN_WIDTH, SCREEN_HEIGHT, WINDOW_TITLE);
-    SDL_Renderer* renderer = createRenderer(window);
+    if(!(IMG_Init(IMG_INIT_JPG) & IMG_INIT_JPG))
+    {
+        std::cout << "could not initialize sdl image jpeg Error: " << IMG_GetError() << std::endl;
+        return 1;
+    }
+    
+    SDL_Event windowEvent;
 
-    //Xóa màn hình
-    SDL_RenderClear(renderer);
+    imageSurface = IMG_Load("rsz_1visionboard.jpg");
 
-    //Vẽ gì đó
-    drawSomething(window, renderer);
+    std::cout << "image width " << imageSurface->w << " image height " << imageSurface->h;
 
-    //Hiện bản vẽ ra màn hình
-    //Khi chạy tại môi trường bình thường
-    SDL_RenderPresent(renderer);
-    //Khi chạy trong máy ảo (ví dụ phòng máy ở trường)
-    //SDL_UpdateWindowSurface(window);
+    while(true)
+    {
+        if(SDL_PollEvent(&windowEvent))
+        {
+            if(windowEvent.type == SDL_QUIT)
+            {
+                break;
+            }
+        }
+        SDL_BlitSurface(imageSurface, nullptr, windowSurface, nullptr);
+        SDL_UpdateWindowSurface(window);
 
-    //Đợi phím bất kỳ trước khi đóng môi trường đồ họa và kết thúc chương trình
-    waitUntilKeyPressed();
-    quitSDL(window, renderer);
+    }
+    
+    SDL_DestroyWindow(window);
+
     return 0;
 }
-
-
