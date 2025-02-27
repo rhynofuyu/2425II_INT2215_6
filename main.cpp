@@ -1,99 +1,81 @@
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_image.h>
 
-struct Paddle {
-    SDL_Rect rect;
-    int speed;
-};
-
-struct Ball {
-    SDL_Rect rect;
-    int speedX;
-    int speedY;
+enum GameState {
+    MENU,
+    PLAYING
 };
 
 int main(int argc, char* argv[]) {
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
-        SDL_Log("Không thể khởi tạo SDL: %s", SDL_GetError());
-        return 1;
-    }
+    SDL_Init(SDL_INIT_VIDEO);
+    IMG_Init(IMG_INIT_PNG);
 
-    SDL_Window* window = SDL_CreateWindow("Ping Pong", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 800, 600, 0);
-    if (!window) {
-        SDL_Log("Không thể tạo cửa sổ: %s", SDL_GetError());
-        SDL_Quit();
-        return 1;
-    }
-
+    SDL_Window* window = SDL_CreateWindow("Game Menu", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720, 0);
     SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-    if (!renderer) {
-        SDL_Log("Không thể tạo renderer: %s", SDL_GetError());
-        SDL_DestroyWindow(window);
-        SDL_Quit();
+
+    SDL_Surface* bgSurface = IMG_Load("./3.jpg"); 
+    if (!bgSurface) {
+        SDL_Log("failed bg %s", IMG_GetError());
         return 1;
     }
+    SDL_Texture* bgTexture = SDL_CreateTextureFromSurface(renderer, bgSurface);
+    SDL_FreeSurface(bgSurface);
 
-    Paddle playerPaddle = { {100, 250, 20, 100}, 5 };
-    Paddle aiPaddle = { {680, 250, 20, 100}, 5 };
-    Ball ball = { {390, 290, 20, 20}, 3, 3 };
+    SDL_Surface* buttonSurface = IMG_Load("./4.jpg"); 
+    if (!buttonSurface) {
+        SDL_Log("fail button %s", IMG_GetError());
+        return 1;
+    }
+    SDL_Texture* buttonTexture = SDL_CreateTextureFromSurface(renderer, buttonSurface);
 
+    SDL_Rect buttonRect;
+    buttonRect.w = buttonSurface->w;
+    buttonRect.h = buttonSurface->h; 
+    buttonRect.x = (1280 - buttonRect.w) / 2;
+    buttonRect.y = (720 - buttonRect.h) / 2; 
+    SDL_FreeSurface(buttonSurface);
+
+    GameState state = MENU;
     bool running = true;
+
     while (running) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) {
                 running = false;
             }
-            if (event.type == SDL_KEYDOWN) {
-                switch (event.key.keysym.sym) {
-                    case SDLK_UP:
-                        playerPaddle.rect.y -= playerPaddle.speed;
-                        break;
-                    case SDLK_DOWN:
-                        playerPaddle.rect.y += playerPaddle.speed;
-                        break;
+            if (state == MENU && event.type == SDL_MOUSEBUTTONDOWN) {
+                int mouseX, mouseY;
+                SDL_GetMouseState(&mouseX, &mouseY);
+                if (mouseX >= buttonRect.x && mouseX <= buttonRect.x + buttonRect.w &&
+                    mouseY >= buttonRect.y && mouseY <= buttonRect.y + buttonRect.h) {
+                    state = PLAYING; 
                 }
             }
         }
 
-        // Cập nhật bóng
-        ball.rect.x += ball.speedX;
-        ball.rect.y += ball.speedY;
-
-        // Va chạm với paddle
-        if (SDL_HasIntersection(&ball.rect, &playerPaddle.rect) || SDL_HasIntersection(&ball.rect, &aiPaddle.rect)) {
-            ball.speedX = -ball.speedX;
-        }
-
-        // Va chạm với biên
-        if (ball.rect.y <= 0 || ball.rect.y + ball.rect.h >= 600) {
-            ball.speedY = -ball.speedY;
-        }
-        if (ball.rect.x <= 0 || ball.rect.x + ball.rect.w >= 800) {
-            ball.rect.x = 390;
-            ball.rect.y = 290;
-        }
-
-        // AI cho paddle
-        if (ball.rect.y < aiPaddle.rect.y + aiPaddle.rect.h / 2) {
-            aiPaddle.rect.y -= aiPaddle.speed;
-        } else if (ball.rect.y > aiPaddle.rect.y + aiPaddle.rect.h / 2) {
-            aiPaddle.rect.y += aiPaddle.speed;
-        }
-
-        // Vẽ màn hình
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-        SDL_RenderFillRect(renderer, &playerPaddle.rect);
-        SDL_RenderFillRect(renderer, &aiPaddle.rect);
-        SDL_RenderFillRect(renderer, &ball.rect);
-        SDL_RenderPresent(renderer);
 
-        SDL_Delay(16);
+        if (state == MENU) {
+            SDL_RenderCopy(renderer, bgTexture, NULL, NULL);
+            SDL_RenderCopy(renderer, buttonTexture, NULL, &buttonRect);
+        } else if (state == PLAYING) {
+            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+            SDL_Rect placeholder = {350, 250, 100, 100};
+            SDL_RenderFillRect(renderer, &placeholder);
+        }
+
+        SDL_RenderPresent(renderer); 
+        SDL_Delay(16); 
     }
 
+    SDL_DestroyTexture(bgTexture);
+    SDL_DestroyTexture(buttonTexture);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
+    IMG_Quit();
     SDL_Quit();
+
     return 0;
 }
