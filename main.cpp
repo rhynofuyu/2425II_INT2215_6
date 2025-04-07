@@ -1,204 +1,359 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <SDL2/SDL_mixer.h>
+#include <SDL2/SDL_ttf.h>  // Add TTF library
+#include <iostream>
+#include <vector>
+#include <string>
+#include <functional>
 #include <cmath>
+#include <map>  // For mapping button filenames to display text
 
+// Game states
 enum GameState {
-    MENU,
-    PLAYING
+    MAIN_MENU,
+    LEVEL_SELECT,
+    SETTINGS,
+    GAME_PLAYING
 };
 
-struct GameObject {
+// Button class with text fallback support
+class Button {
+private:
     SDL_Rect rect;
-    int speed_y;
-    float speed_x, speed_y_ball;
+    SDL_Texture* texture;
+    SDL_Texture* hoverTexture;
+    bool isHovered;
+    std::function<void()> onClick;
+    std::string buttonText;  // Text to display if images unavailable
+    bool useTextFallback;   // Flag for using text instead of images
+
+public:
+    Button(SDL_Renderer* renderer, int x, int y, int w, int h, 
+           const std::string& imagePath, const std::string& hoverImagePath, 
+           std::function<void()> callback, const std::string& text = "") {
+        rect = {x, y, w, h};
+        isHovered = false;
+        onClick = callback;
+        buttonText = text;
+        useTextFallback = false;
+        
+        // Extract button text from filename if not provided
+        if (buttonText.empty()) {
+            // Extract filename from path
+            size_t lastSlash = imagePath.find_last_of("/\\");
+            std::string filename = imagePath.substr(lastSlash + 1);
+            
+            // Remove extension and "_btn" suffix
+            size_t dotPos = filename.find_last_of(".");
+            std::string baseName = filename.substr(0, dotPos);
+            
+            // Handle different button types
+            if (baseName == "play_btn") buttonText = "PLAY";
+            else if (baseName == "settings_btn") buttonText = "SETTINGS";
+            else if (baseName == "credit_btn") buttonText = "CREDITS";
+            else if (baseName == "back_btn") buttonText = "BACK";
+            else if (baseName == "vol_up") buttonText = "+";
+            else if (baseName == "vol_down") buttonText = "-";
+            else if (baseName == "lang_btn") buttonText = "LANGUAGE";
+            else if (baseName.find("level") != std::string::npos) {
+                // For level buttons, extract the level number
+                for (char c : baseName) {
+                    if (isdigit(c)) {
+                        buttonText = "LEVEL " + std::string(1, c);
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Load normal texture
+        SDL_Surface* surface = IMG_Load(imagePath.c_str());
+        if (surface == nullptr) {
+            std::cout << "Failed to load image: " << imagePath << " - " << IMG_GetError() << std::endl;
+            texture = nullptr;
+            useTextFallback = true;
+        } else {
+            texture = SDL_CreateTextureFromSurface(renderer, surface);
+            SDL_FreeSurface(surface);
+        }
+        
+        // Load hover texture
+        surface = IMG_Load(hoverImagePath.c_str());
+        if (surface == nullptr) {
+            std::cout << "Failed to load hover image: " << hoverImagePath << std::endl;
+            hoverTexture = texture; // Use normal texture as fallback
+            useTextFallback = useTextFallback || (hoverTexture == nullptr);
+        } else {
+            hoverTexture = SDL_CreateTextureFromSurface(renderer, surface);
+            SDL_FreeSurface(surface);
+        }
+    }
+    
+    ~Button() {
+        if (texture) SDL_DestroyTexture(texture);
+        if (hoverTexture && hoverTexture != texture) SDL_DestroyTexture(hoverTexture);
+    }
+    
+    bool handleEvent(const SDL_Event& event) {
+        if (event.type == SDL_MOUSEMOTION) {
+            int mouseX = event.motion.x;
+            int mouseY = event.motion.y;
+            isHovered = (mouseX >= rect.x && mouseX < rect.x + rect.w &&
+                         mouseY >= rect.y && mouseY < rect.y + rect.h);
+        }
+        else if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {
+            int mouseX = event.button.x;
+            int mouseY = event.button.y;
+            if (mouseX >= rect.x && mouseX < rect.x + rect.w &&
+                mouseY >= rect.y && mouseY < rect.y + rect.h) {
+                onClick();
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    void render(SDL_Renderer* renderer) {
+        if (!useTextFallback && (texture != nullptr)) {
+            // Use the image if available
+            SDL_RenderCopy(renderer, isHovered ? hoverTexture : texture, nullptr, &rect);
+        } else {
+            // Draw a colored rectangle with text as fallback
+            if (isHovered) {
+                SDL_SetRenderDrawColor(renderer, 100, 100, 255, 255);  // Light blue when hovered
+            } else {
+                SDL_SetRenderDrawColor(renderer, 70, 70, 200, 255);    // Darker blue normally
+            }
+            
+            // Draw button background
+            SDL_RenderFillRect(renderer, &rect);
+            
+            // Draw button border
+            SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
+            SDL_RenderDrawRect(renderer, &rect);
+            
+            // For text rendering, we'd need SDL_ttf
+            // Since we don't have that set up, let's just use a visual placeholder
+            // In a real implementation, you'd render buttonText here
+            
+            // Draw a simple visual indicator of button text (horizontal line)
+            int lineWidth = buttonText.length() * 8;  // Approximate width based on text length
+            int lineX = rect.x + (rect.w - lineWidth) / 2;
+            int lineY = rect.y + rect.h / 2;
+            
+            SDL_Rect textIndicator = {lineX, lineY, lineWidth, 2};
+            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+            SDL_RenderFillRect(renderer, &textIndicator);
+        }
+    }
+    
+    // Add method to render text properly with SDL_TTF (if you add SDL_TTF integration)
+    void renderTextOnButton(SDL_Renderer* renderer, TTF_Font* font) {
+        // This is a placeholder for SDL_TTF implementation
+        // You'd use TTF_RenderText_Solid/Blended and create a texture from that
+    }
 };
+
+// Load texture function
+SDL_Texture* loadTexture(SDL_Renderer* renderer, const std::string& path) {
+    SDL_Surface* surface = IMG_Load(path.c_str());
+    if (surface == nullptr) {
+        std::cout << "Failed to load image: " << path << " - " << IMG_GetError() << std::endl;
+        return nullptr;
+    }
+    
+    SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
+    SDL_FreeSurface(surface);
+    return texture;
+}
 
 int main(int argc, char* argv[]) {
+    // Khởi tạo SDL
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
     IMG_Init(IMG_INIT_PNG);
     Mix_Init(MIX_INIT_MP3);
+    Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048);
 
-    if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
-        SDL_Log("SDL_mixer could not initialize! SDL_mixer Error: %s\n", Mix_GetError());
-        return false;
-    }
+    // Tạo cửa sổ
+    SDL_Window* window = SDL_CreateWindow(
+        "Game Menu",
+        SDL_WINDOWPOS_CENTERED,
+        SDL_WINDOWPOS_CENTERED,
+        1280, 720,
+        0
+    );
 
-    SDL_Window* window = SDL_CreateWindow("Game Menu", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720, 0);
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    // Tạo renderer
+    SDL_Renderer* renderer = SDL_CreateRenderer(
+        window,
+        -1,
+        SDL_RENDERER_ACCELERATED
+    );
 
-    SDL_Surface* bgSurface = IMG_Load("./3.jpg");
-    if (!bgSurface) {
-        SDL_Log("failed menu bg %s", IMG_GetError());
-        return 1;
-    }
-    SDL_Texture* bgTexture = SDL_CreateTextureFromSurface(renderer, bgSurface);
-    SDL_FreeSurface(bgSurface);
-
-    SDL_Surface* buttonSurface = IMG_Load("./4.jpg");
-    if (!buttonSurface) {
-        SDL_Log("fail button %s", IMG_GetError());
-        return 1;
-    }
-    SDL_Texture* buttonTexture = SDL_CreateTextureFromSurface(renderer, buttonSurface);
-
-    SDL_Rect buttonRect;
-    buttonRect.w = buttonSurface->w;
-    buttonRect.h = buttonSurface->h;
-    buttonRect.x = (1280 - buttonRect.w) / 2;
-    buttonRect.y = (720 - buttonRect.h) / 2 + 100;
-    SDL_FreeSurface(buttonSurface);
-
-    SDL_Surface* paddleSurface = IMG_Load("./dpq.png");
-    if (!paddleSurface) {
-        SDL_Log("fail paddle texture %s", IMG_GetError());
-        return 1;
-    }
-    SDL_Texture* paddleTexture = SDL_CreateTextureFromSurface(renderer, paddleSurface);
-    SDL_FreeSurface(paddleSurface);
-
-    SDL_Surface* gameBgSurface = IMG_Load("./topview.jpeg");
-    if (!gameBgSurface) {
-        SDL_Log("failed game bg %s", IMG_GetError());
-        return 1;
-    }
-    SDL_Texture* gameBgTexture = SDL_CreateTextureFromSurface(renderer, gameBgSurface);
-    SDL_FreeSurface(gameBgSurface);
-
-    Mix_Music *music = Mix_LoadMUS("./bgm.mp3");
-    if (!music) {
-        SDL_Log("Mix_LoadMUS(\"bgm.mp3\"): %s\n", Mix_GetError());
-
-    }
-
-
-    GameState state = MENU;
-    bool running = true;
-    GameObject playerPaddle, enemyPaddle, ball;
-
-    playerPaddle.rect.w = 20;
-    playerPaddle.rect.h = 100;
-    playerPaddle.rect.x = 50;
-    playerPaddle.rect.y = (720 - playerPaddle.rect.h) / 2;
-    playerPaddle.speed_y = 0;
-
+    // Game state
+    GameState currentState = MAIN_MENU;
     
-    enemyPaddle.rect.w = 90;
-    enemyPaddle.rect.h = 90; 
-    enemyPaddle.rect.x = 1280 - 50 - enemyPaddle.rect.w;
-    enemyPaddle.rect.y = (720 - enemyPaddle.rect.h) / 2;
-    enemyPaddle.speed_y = 5.0f;
+    // Volume settings
+    int musicVolume = MIX_MAX_VOLUME;
+    int sfxVolume = MIX_MAX_VOLUME;
+    std::string currentLanguage = "English";
+    
+    // Load background textures
+    SDL_Texture* mainMenuBg = loadTexture(renderer, "assets/main_menu_bg.png");
+    SDL_Texture* levelSelectBg = loadTexture(renderer, "assets/level_select_bg.png"); 
+    SDL_Texture* settingsBg = loadTexture(renderer, "assets/settings_bg.png");
+    
+    // Create main menu buttons
+    std::vector<Button> mainMenuButtons;
+    mainMenuButtons.push_back(Button(renderer, 500, 300, 280, 80, "assets/play_btn.png", 
+                                   "assets/play_btn_hover.png", 
+                                   [&currentState]() { currentState = LEVEL_SELECT; }));
+    
+    mainMenuButtons.push_back(Button(renderer, 500, 400, 280, 80, "assets/settings_btn.png", 
+                                   "assets/settings_btn_hover.png", 
+                                   [&currentState]() { currentState = SETTINGS; }));
+    
+    // Add Credits button at the bottom-right corner
+    mainMenuButtons.push_back(Button(renderer, 1100, 640, 150, 60, "assets/credit_btn.png", 
+                                   "assets/credit_btn_hover.png", 
+                                   []() { 
+                                       std::cout << "Credits - Game developed by [Your Name]\n"; 
+                                       // You could also create a new CREDITS state and screen instead
+                                   }));
+    
+    // Create level select buttons
+    std::vector<Button> levelSelectButtons;
+    for (int i = 0; i < 5; i++) {
+        levelSelectButtons.push_back(Button(renderer, 300 + (i%3)*250, 200 + (i/3)*150, 200, 100, 
+                                          "assets/level" + std::to_string(i+1) + "_btn.png", 
+                                          "assets/level" + std::to_string(i+1) + "_btn_hover.png", 
+                                          [i]() { std::cout << "Level " << i+1 << " selected\n"; }));
+    }
+    
+    // Back button for level select
+    levelSelectButtons.push_back(Button(renderer, 50, 50, 100, 50, "assets/back_btn.png", 
+                                      "assets/back_btn_hover.png", 
+                                      [&currentState]() { currentState = MAIN_MENU; }));
+    
+    // Create settings buttons
+    std::vector<Button> settingsButtons;
+    // Volume up/down buttons
+    settingsButtons.push_back(Button(renderer, 700, 200, 50, 50, "assets/vol_up.png", 
+                                   "assets/vol_up_hover.png", 
+                                   [&musicVolume]() { 
+                                       musicVolume = std::min(musicVolume + 10, MIX_MAX_VOLUME);
+                                       Mix_VolumeMusic(musicVolume);
+                                   }));
+    
+    settingsButtons.push_back(Button(renderer, 400, 200, 50, 50, "assets/vol_down.png", 
+                                   "assets/vol_down_hover.png", 
+                                   [&musicVolume]() { 
+                                       musicVolume = std::max(musicVolume - 10, 0);
+                                       Mix_VolumeMusic(musicVolume);
+                                   }));
+    
+    // Language toggle
+    settingsButtons.push_back(Button(renderer, 530, 350, 220, 60, "assets/lang_btn.png", 
+                                   "assets/lang_btn_hover.png", 
+                                   [&currentLanguage]() { 
+                                       if (currentLanguage == "English") currentLanguage = "Vietnamese";
+                                       else currentLanguage = "English";
+                                   }));
+    
+    // Back button for settings
+    settingsButtons.push_back(Button(renderer, 50, 50, 100, 50, "assets/back_btn.png", 
+                                   "assets/back_btn_hover.png", 
+                                   [&currentState]() { currentState = MAIN_MENU; }));
 
-    ball.rect.w = 20;
-    ball.rect.h = 20;
-    ball.rect.x = (1280 - ball.rect.w) / 2;
-    ball.rect.y = (720 - ball.rect.h) / 2;
-    ball.speed_x = 5.0f;
-    ball.speed_y_ball = 5.0f;
+    // Biến kiểm tra vòng lặp chính
+    bool running = true;
 
-
+    // Vòng lặp chính
     while (running) {
+        // Xử lý sự kiện
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) {
                 running = false;
             }
-            if (state == MENU && event.type == SDL_MOUSEBUTTONDOWN) {
-                int mouseX, mouseY;
-                SDL_GetMouseState(&mouseX, &mouseY);
-                if (mouseX >= buttonRect.x && mouseX <= buttonRect.x + buttonRect.w &&
-                    mouseY >= buttonRect.y && mouseY <= buttonRect.y + buttonRect.h) {
-                    state = PLAYING;
-                    if (music) {
-                        Mix_PlayMusic(music, -1);
+            
+            // Handle button events based on current state
+            switch (currentState) {
+                case MAIN_MENU:
+                    for (auto& button : mainMenuButtons) {
+                        button.handleEvent(event);
                     }
-                }
-            }
-            if (state == PLAYING) {
-                if (event.type == SDL_KEYDOWN) {
-                    switch (event.key.keysym.sym) {
-                        case SDLK_UP: playerPaddle.speed_y = -5; break;
-                        case SDLK_DOWN: playerPaddle.speed_y = 5; break;
+                    break;
+                    
+                case LEVEL_SELECT:
+                    for (auto& button : levelSelectButtons) {
+                        button.handleEvent(event);
                     }
-                }
-                if (event.type == SDL_KEYUP) {
-                    switch (event.key.keysym.sym) {
-                        case SDLK_UP:
-                        case SDLK_DOWN: playerPaddle.speed_y = 0; break;
+                    break;
+                    
+                case SETTINGS:
+                    for (auto& button : settingsButtons) {
+                        button.handleEvent(event);
                     }
-                }
+                    break;
+                    
+                default:
+                    break;
             }
         }
 
+        // Clear screen
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
-
-        if (state == MENU) {
-            SDL_RenderCopy(renderer, bgTexture, NULL, NULL);
-            SDL_RenderCopy(renderer, buttonTexture, NULL, &buttonRect);
-        } else if (state == PLAYING) {
-
-            SDL_RenderCopy(renderer, gameBgTexture, NULL, NULL);
-            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-
-            SDL_RenderFillRect(renderer, &playerPaddle.rect);
-
-            SDL_RenderCopy(renderer, paddleTexture, NULL, &enemyPaddle.rect);
-
-            SDL_RenderFillRect(renderer, &ball.rect);
-
-            playerPaddle.rect.y += playerPaddle.speed_y;
-            if (playerPaddle.rect.y < 0) playerPaddle.rect.y = 0;
-            if (playerPaddle.rect.y + playerPaddle.rect.h > 720) playerPaddle.rect.y = 720 - playerPaddle.rect.h;
-
-            
-            if (ball.rect.y < enemyPaddle.rect.y + enemyPaddle.rect.h / 2) {
-                enemyPaddle.speed_y = -3;
-            } else if (ball.rect.y > enemyPaddle.rect.y + enemyPaddle.rect.h / 2) {
-                enemyPaddle.speed_y = 3;
-            } else {
-                enemyPaddle.speed_y = 0;
-            }
-            enemyPaddle.rect.y += enemyPaddle.speed_y;
-            if (enemyPaddle.rect.y < 0) enemyPaddle.rect.y = 0;
-            if (enemyPaddle.rect.y + enemyPaddle.rect.h > 720) enemyPaddle.rect.y = 720 - enemyPaddle.rect.h;
-
-            ball.rect.x += ball.speed_x;
-            ball.rect.y += ball.speed_y_ball;
-
-            if (ball.rect.y < 0 || ball.rect.y + ball.rect.h > 720) {
-                ball.speed_y_ball = -ball.speed_y_ball;
-            }
-
-            if (SDL_HasIntersection(&ball.rect, &playerPaddle.rect)) {
-                ball.speed_x = -ball.speed_x;
-            }
-            if (SDL_HasIntersection(&ball.rect, &enemyPaddle.rect)) {
-                ball.speed_x = -ball.speed_x;
-            }
-
-            if (ball.rect.x < 0 || ball.rect.x + ball.rect.w > 1280) {
-                ball.rect.x = (1280 - ball.rect.w) / 2;
-                ball.rect.y = (720 - ball.rect.h) / 2;
-                ball.speed_x = (ball.rect.x < 0) ? 5.0f : -5.0f;
-            }
+        
+        // Render based on current state
+        switch (currentState) {
+            case MAIN_MENU:
+                if (mainMenuBg) {
+                    SDL_RenderCopy(renderer, mainMenuBg, nullptr, nullptr);
+                }
+                for (auto& button : mainMenuButtons) {
+                    button.render(renderer);
+                }
+                break;
+                
+            case LEVEL_SELECT:
+                if (levelSelectBg) {
+                    SDL_RenderCopy(renderer, levelSelectBg, nullptr, nullptr);
+                }
+                for (auto& button : levelSelectButtons) {
+                    button.render(renderer);
+                }
+                break;
+                
+            case SETTINGS:
+                if (settingsBg) {
+                    SDL_RenderCopy(renderer, settingsBg, nullptr, nullptr);
+                }
+                for (auto& button : settingsButtons) {
+                    button.render(renderer);
+                }
+                break;
+                
+            default:
+                break;
         }
-
+        
+        // Hiển thị màn hình
         SDL_RenderPresent(renderer);
+        
+        // Giới hạn FPS
         SDL_Delay(16);
     }
 
-    SDL_DestroyTexture(bgTexture);
-    SDL_DestroyTexture(buttonTexture);
-    SDL_DestroyTexture(paddleTexture);
-    SDL_DestroyTexture(gameBgTexture);
+    // Giải phóng bộ nhớ
+    if (mainMenuBg) SDL_DestroyTexture(mainMenuBg);
+    if (levelSelectBg) SDL_DestroyTexture(levelSelectBg);
+    if (settingsBg) SDL_DestroyTexture(settingsBg);
+    
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
-
-    if (music) {
-        Mix_HaltMusic();
-        Mix_FreeMusic(music);
-    }
     Mix_CloseAudio();
     Mix_Quit();
     IMG_Quit();
