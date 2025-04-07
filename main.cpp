@@ -114,7 +114,7 @@ public:
         return false;
     }
     
-    void render(SDL_Renderer* renderer) {
+    void render(SDL_Renderer* renderer, TTF_Font* font = nullptr) {
         if (!useTextFallback && (texture != nullptr)) {
             // Use the image if available
             SDL_RenderCopy(renderer, isHovered ? hoverTexture : texture, nullptr, &rect);
@@ -133,25 +133,45 @@ public:
             SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
             SDL_RenderDrawRect(renderer, &rect);
             
-            // For text rendering, we'd need SDL_ttf
-            // Since we don't have that set up, let's just use a visual placeholder
-            // In a real implementation, you'd render buttonText here
-            
-            // Draw a simple visual indicator of button text (horizontal line)
-            int lineWidth = buttonText.length() * 8;  // Approximate width based on text length
-            int lineX = rect.x + (rect.w - lineWidth) / 2;
-            int lineY = rect.y + rect.h / 2;
-            
-            SDL_Rect textIndicator = {lineX, lineY, lineWidth, 2};
-            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-            SDL_RenderFillRect(renderer, &textIndicator);
+            // Render text if font is provided
+            if (font != nullptr) {
+                renderTextOnButton(renderer, font);
+            } else {
+                // Fallback if no font: draw a simple visual indicator (horizontal line)
+                int lineWidth = buttonText.length() * 8;
+                int lineX = rect.x + (rect.w - lineWidth) / 2;
+                int lineY = rect.y + rect.h / 2;
+                
+                SDL_Rect textIndicator = {lineX, lineY, lineWidth, 2};
+                SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+                SDL_RenderFillRect(renderer, &textIndicator);
+            }
         }
     }
     
-    // Add method to render text properly with SDL_TTF (if you add SDL_TTF integration)
+    // Implement text rendering with SDL_TTF
     void renderTextOnButton(SDL_Renderer* renderer, TTF_Font* font) {
-        // This is a placeholder for SDL_TTF implementation
-        // You'd use TTF_RenderText_Solid/Blended and create a texture from that
+        if (!font) return;
+        
+        SDL_Color textColor = {255, 255, 255, 255}; // White text
+        SDL_Surface* textSurface = TTF_RenderText_Blended(font, buttonText.c_str(), textColor);
+        if (textSurface) {
+            SDL_Texture* textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
+            
+            // Calculate position to center text in button
+            SDL_Rect textRect;
+            textRect.w = textSurface->w;
+            textRect.h = textSurface->h;
+            textRect.x = rect.x + (rect.w - textRect.w) / 2;
+            textRect.y = rect.y + (rect.h - textRect.h) / 2;
+            
+            // Render text
+            SDL_RenderCopy(renderer, textTexture, NULL, &textRect);
+            
+            // Clean up
+            SDL_FreeSurface(textSurface);
+            SDL_DestroyTexture(textTexture);
+        }
     }
 };
 
@@ -174,6 +194,12 @@ int main(int argc, char* argv[]) {
     IMG_Init(IMG_INIT_PNG);
     Mix_Init(MIX_INIT_MP3);
     Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048);
+    
+    // Initialize TTF
+    if (TTF_Init() == -1) {
+        std::cout << "Failed to initialize SDL_ttf: " << TTF_GetError() << std::endl;
+        return -1;
+    }
 
     // Tạo cửa sổ
     SDL_Window* window = SDL_CreateWindow(
@@ -190,6 +216,13 @@ int main(int argc, char* argv[]) {
         -1,
         SDL_RENDERER_ACCELERATED
     );
+    
+    // Load font
+    TTF_Font* buttonFont = TTF_OpenFont("assets/fonts/arial.ttf", 24);
+    if (!buttonFont) {
+        std::cout << "Failed to load font: " << TTF_GetError() << std::endl;
+        // Continue anyway, we have a fallback display method
+    }
 
     // Game state
     GameState currentState = MAIN_MENU;
@@ -314,7 +347,7 @@ int main(int argc, char* argv[]) {
                     SDL_RenderCopy(renderer, mainMenuBg, nullptr, nullptr);
                 }
                 for (auto& button : mainMenuButtons) {
-                    button.render(renderer);
+                    button.render(renderer, buttonFont);
                 }
                 break;
                 
@@ -323,7 +356,7 @@ int main(int argc, char* argv[]) {
                     SDL_RenderCopy(renderer, levelSelectBg, nullptr, nullptr);
                 }
                 for (auto& button : levelSelectButtons) {
-                    button.render(renderer);
+                    button.render(renderer, buttonFont);
                 }
                 break;
                 
@@ -332,7 +365,7 @@ int main(int argc, char* argv[]) {
                     SDL_RenderCopy(renderer, settingsBg, nullptr, nullptr);
                 }
                 for (auto& button : settingsButtons) {
-                    button.render(renderer);
+                    button.render(renderer, buttonFont);
                 }
                 break;
                 
@@ -352,10 +385,14 @@ int main(int argc, char* argv[]) {
     if (levelSelectBg) SDL_DestroyTexture(levelSelectBg);
     if (settingsBg) SDL_DestroyTexture(settingsBg);
     
+    // Clean up font
+    if (buttonFont) TTF_CloseFont(buttonFont);
+    
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     Mix_CloseAudio();
     Mix_Quit();
+    TTF_Quit();  // Quit TTF
     IMG_Quit();
     SDL_Quit();
 
