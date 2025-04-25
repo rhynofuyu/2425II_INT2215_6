@@ -8,6 +8,7 @@
 #include <functional>
 #include <cmath>
 #include <map>  // For mapping button filenames to display text
+#include <algorithm>  // Added for std::remove_if
 #include <unistd.h> // For getcwd
 #include <random>   // For fish random generation
 
