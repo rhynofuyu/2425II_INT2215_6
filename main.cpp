@@ -10,7 +10,7 @@
 #include <map>  // For mapping button filenames to display text
 #include <algorithm>  // Added for std::remove_if
 #include <unistd.h> // For getcwd
-#include <random>   // For fish random generation
+#include <random>   
 
 // Function prototype for loadTexture
 SDL_Texture* loadTexture(SDL_Renderer* renderer, const std::string& path);
