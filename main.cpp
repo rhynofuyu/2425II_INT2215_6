@@ -1,4 +1,4 @@
-#include <SDL2/SDL.h>
+﻿#include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <SDL2/SDL_mixer.h>
 #include <SDL2/SDL_ttf.h> 
@@ -7,1106 +7,1540 @@
 #include <string>
 #include <functional>
 #include <cmath>
-#include <map>  // For mapping button filenames to display text
-#include <algorithm>  // Added for std::remove_if
-#include <unistd.h> // For getcwd
-#include <random>   // For fish random generation
+#include <map>
+#include <algorithm>
+#include <unistd.h>
+#include <random>
+#include <fstream>
 
-// Function prototype for loadTexture
-SDL_Texture* loadTexture(SDL_Renderer* renderer, const std::string& path);
+// Include our game structures
+#include "src/include/game_structures.h"
+#include "src/include/texture_manager.h"
 
-// Game states
-enum GameState {
-    MAIN_MENU,
-    LEVEL_SELECT,
-    SETTINGS,
-    GAME_PLAYING
+// Forward declarations (function prototypes)
+void initGame();
+bool initMenuBackground(SDL_Renderer* renderer);
+void handleInput(SDL_Event& event);
+void renderMenu(SDL_Renderer* renderer, TTF_Font* font);
+void renderHUD(SDL_Renderer* renderer, TTF_Font* font, int levelNum, int moves, int pushes);
+void renderLevelComplete(SDL_Renderer* renderer, TTF_Font* normalFont, TTF_Font* largeFont, int levelNum, int moves, int pushes);
+void renderGameComplete(SDL_Renderer* renderer, TTF_Font* normalFont, TTF_Font* largeFont, int moves, int pushes);
+void renderLevelSelect(SDL_Renderer* renderer, TTF_Font* font);
+void renderSettings(SDL_Renderer* renderer, TTF_Font* font);
+void renderSkinSelect(SDL_Renderer* renderer, TTF_Font* font);
+bool checkWinCondition(Level* level);
+void cleanupMenuResources();
+void renderText(SDL_Renderer* renderer, const char* text, int x, int y, TTF_Font* font, SDL_Color textColor);
+
+// Global constants
+const int TILE_SIZE = 40;  // Size of each tile in pixels
+
+// Global menu state
+int currentMenuSelection = MENU_START_GAME;
+int currentSettingsSelection = SETTINGS_BACKGROUND_MUSIC;
+int currentSkinSelection = SKIN_DEFAULT;
+
+// Level complete animation variables
+Uint32 levelCompleteTime = 0;
+bool showLevelCompleteAnim = false;
+
+// Global window reference for use in other functions
+SDL_Window* window = nullptr;
+
+// Global variables for menu background animation
+SDL_Texture* menuBackgroundTexture = nullptr;
+SDL_Texture* levelSelectBackgroundTexture = nullptr;
+SDL_Texture* gameLevelBackgroundTexture = nullptr;  // Background for gameplay levels
+
+// Music/sound globals
+Mix_Music* backgroundMusic = nullptr;
+Mix_Chunk* soundEffects[3] = {nullptr}; // 0: move, 1: push, 2: success
+
+// Player skin image names for each skin
+const char* playerSkinNames[SKIN_COUNT][2] = {
+    {"assets/images/players/default/player.png", "assets/images/players/default/player_on_target.png"},
+    {"assets/images/players/alt1/player.png", "assets/images/players/alt1/player_on_target.png"},
+    {"assets/images/players/alt2/player.png", "assets/images/players/alt2/player_on_target.png"},
+    {"assets/images/players/alt3/player.png", "assets/images/players/alt3/player_on_target.png"},
+    {"assets/images/players/alt4/player.png", "assets/images/players/alt4/player_on_target.png"}
 };
-
-// Player direction enum
-enum Direction {
-    UP, DOWN, LEFT, RIGHT, IDLE
-};
-
-// Fishing state enum
-enum FishingState {
-    NOT_FISHING,
-    CASTING,
-    WAITING_FOR_FISH,
-    FISH_BITING,
-    REELING,
-    CAUGHT_FISH
-};
-
-// Particle class for visual effects (bubbles, ripples)
-class Particle {
-private:
-    float x, y;
-    float vx, vy;
-    int size;
-    int lifetime;
-    int maxLifetime;
-    SDL_Color color;
-    int alpha;
-    
-public:
-    Particle(float startX, float startY, float velocityX, float velocityY, 
-             int particleSize, int maxLife, SDL_Color particleColor)
-        : x(startX), y(startY), vx(velocityX), vy(velocityY), 
-          size(particleSize), lifetime(0), maxLifetime(maxLife), color(particleColor), alpha(255) {
-    }
-    
-    bool update() {
-        // Update position
-        x += vx;
-        y += vy;
-        
-        // Apply subtle random movement
-        x += (std::rand() % 3 - 1) * 0.5f;
-        y += (std::rand() % 3 - 1) * 0.5f;
-        
-        // Update lifetime
-        lifetime++;
-        
-        // Fade out near end of life
-        if (lifetime > maxLifetime * 0.7f) {
-            float fadeRatio = 1.0f - ((float)lifetime - maxLifetime * 0.7f) / (maxLifetime * 0.3f);
-            alpha = static_cast<int>(fadeRatio * 255);
-            if (alpha < 0) alpha = 0;
-        }
-        
-        // Return true if particle is still alive
-        return lifetime < maxLifetime;
-    }
-    
-    void render(SDL_Renderer* renderer, SDL_Texture* texture = nullptr) {
-        if (texture) {
-            // If texture is provided, render textured particle
-            SDL_Rect destRect = {static_cast<int>(x - size/2), static_cast<int>(y - size/2), size, size};
-            SDL_SetTextureAlphaMod(texture, alpha);
-            SDL_RenderCopy(renderer, texture, nullptr, &destRect);
-        } else {
-            // Otherwise render simple circle (approximated with points)
-            SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-            SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, alpha);
-            
-            // Simple approximation of a circle using points
-            for (int i = 0; i < 10; i++) {
-                float angle = i * M_PI / 5.0f;
-                int px = static_cast<int>(x + std::cos(angle) * size/2);
-                int py = static_cast<int>(y + std::sin(angle) * size/2);
-                SDL_RenderDrawPoint(renderer, px, py);
-            }
-        }
-    }
-};
-
-// ParticleSystem class to manage multiple particles
-class ParticleSystem {
-private:
-    std::vector<Particle> particles;
-    SDL_Texture* particleTexture;
-    std::mt19937 rng;
-    
-public:
-    ParticleSystem(SDL_Renderer* renderer, const std::string& texturePath = "") : particleTexture(nullptr) {
-        // Initialize random generator
-        std::random_device rd;
-        rng = std::mt19937(rd());
-        
-        // Load texture if path provided
-        if (!texturePath.empty()) {
-            particleTexture = loadTexture(renderer, texturePath);
-        }
-    }
-    
-    ~ParticleSystem() {
-        if (particleTexture) SDL_DestroyTexture(particleTexture);
-    }
-    
-    void addBubbleParticles(float x, float y, int count) {
-        std::uniform_real_distribution<float> velDist(-0.5f, 0.5f);
-        std::uniform_int_distribution<int> sizeDist(8, 16);
-        std::uniform_int_distribution<int> lifeDist(40, 100);
-        
-        for (int i = 0; i < count; i++) {
-            float offsetX = (std::rand() % 20) - 10;
-            float offsetY = (std::rand() % 20) - 10;
-            
-            SDL_Color bubbleColor = {200, 240, 255, 255}; // Light blue
-            
-            particles.emplace_back(
-                x + offsetX, y + offsetY,
-                velDist(rng), -0.5f - velDist(rng), // Upward movement
-                sizeDist(rng), lifeDist(rng),
-                bubbleColor
-            );
-        }
-    }
-    
-    void addSplashParticles(float x, float y, int count, float force = 1.0f) {
-        std::uniform_real_distribution<float> angleDist(0, 2 * M_PI);
-        std::uniform_real_distribution<float> speedDist(1.0f, 3.0f);
-        std::uniform_int_distribution<int> sizeDist(3, 7);
-        std::uniform_int_distribution<int> lifeDist(20, 40);
-        
-        for (int i = 0; i < count; i++) {
-            float angle = angleDist(rng);
-            float speed = speedDist(rng) * force;
-            
-            SDL_Color splashColor = {180, 220, 255, 255}; // Water color
-            
-            particles.emplace_back(
-                x, y,
-                std::cos(angle) * speed, std::sin(angle) * speed,
-                sizeDist(rng), lifeDist(rng),
-                splashColor
-            );
-        }
-    }
-    
-    void update() {
-        // Using erase-remove idiom to efficiently remove dead particles
-        particles.erase(std::remove_if(particles.begin(), particles.end(),
-            [](Particle& p) { return !p.update(); }), particles.end());
-    }
-    
-    void render(SDL_Renderer* renderer) {
-        for (auto& particle : particles) {
-            particle.render(renderer, particleTexture);
-        }
-    }
-    
-    int getParticleCount() const {
-        return particles.size();
-    }
-};
-
-// Player class for the fishing game
-class Player {
-private:
-    float x, y;
-    int width, height;
-    float speed;
-    Direction direction;
-    SDL_Texture* texture;
-    SDL_Rect currentFrame;
-    SDL_Rect collisionBox;
-    bool isMoving;
-    
-    // Animation variables
-    int frameCount;
-    int currentFrameIndex;
-    int animationDelay;
-    int animationTimer;
-
-public:
-    Player(SDL_Renderer* renderer, float startX, float startY) {
-        x = startX;
-        y = startY;
-        width = 64;
-        height = 64;
-        speed = 5.0f;
-        direction = IDLE;
-        isMoving = false;
-        
-        // Animation setup
-        frameCount = 4;  // Frames per direction
-        currentFrameIndex = 0;
-        animationDelay = 8;  // Frames to wait before changing animation frame
-        animationTimer = 0;
-        
-        // Default collision box
-        collisionBox = {(int)x + 16, (int)y + 32, width - 32, height - 32};
-        
-        // Load player texture
-        texture = loadTexture(renderer, "assets/player_spritesheet.png");
-        if (!texture) {
-            std::cout << "Failed to load player texture. Using fallback." << std::endl;
-        }
-        
-        // Initialize frame rectangle
-        currentFrame = {0, 0, width, height};
-    }
-    
-    ~Player() {
-        if (texture) SDL_DestroyTexture(texture);
-    }
-    
-    void handleInput(const Uint8* keystate) {
-        // Reset movement flag
-        isMoving = false;
-        
-        // Process movement keys
-        if (keystate[SDL_SCANCODE_W] || keystate[SDL_SCANCODE_UP]) {
-            direction = UP;
-            y -= speed;
-            isMoving = true;
-        } 
-        else if (keystate[SDL_SCANCODE_S] || keystate[SDL_SCANCODE_DOWN]) {
-            direction = DOWN;
-            y += speed;
-            isMoving = true;
-        }
-        
-        if (keystate[SDL_SCANCODE_A] || keystate[SDL_SCANCODE_LEFT]) {
-            direction = LEFT;
-            x -= speed;
-            isMoving = true;
-        } 
-        else if (keystate[SDL_SCANCODE_D] || keystate[SDL_SCANCODE_RIGHT]) {
-            direction = RIGHT;
-            x += speed;
-            isMoving = true;
-        }
-        
-        // Update collision box based on new position
-        collisionBox.x = (int)x + 16;
-        collisionBox.y = (int)y + 32;
-    }
-    
-    void update() {
-        // Update animation if moving
-        if (isMoving) {
-            animationTimer++;
-            if (animationTimer >= animationDelay) {
-                currentFrameIndex = (currentFrameIndex + 1) % frameCount;
-                animationTimer = 0;
-            }
-        } else {
-            // Reset to standing frame when not moving
-            currentFrameIndex = 0;
-        }
-        
-        // Update current frame rect based on direction and animation
-        currentFrame.x = currentFrameIndex * width;
-        currentFrame.y = (int)direction * height;
-    }
-    
-    void render(SDL_Renderer* renderer) {
-        SDL_Rect destRect = {(int)x, (int)y, width, height};
-        
-        if (texture) {
-            SDL_RenderCopy(renderer, texture, &currentFrame, &destRect);
-        } else {
-            // Fallback rendering
-            SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
-            SDL_RenderFillRect(renderer, &destRect);
-            
-            // Draw direction indicator
-            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-            int centerX = (int)x + width / 2;
-            int centerY = (int)y + height / 2;
-            int lineEndX = centerX;
-            int lineEndY = centerY;
-            
-            switch(direction) {
-                case UP: lineEndY = centerY - 20; break;
-                case DOWN: lineEndY = centerY + 20; break;
-                case LEFT: lineEndX = centerX - 20; break;
-                case RIGHT: lineEndX = centerX + 20; break;
-                default: break;
-            }
-            
-            SDL_RenderDrawLine(renderer, centerX, centerY, lineEndX, lineEndY);
-        }
-        
-        // Debug: draw collision box
-        // SDL_SetRenderDrawColor(renderer, 0, 255, 0, 128);
-        // SDL_RenderDrawRect(renderer, &collisionBox);
-    }
-    
-    // Getters
-    float getX() const { return x; }
-    float getY() const { return y; }
-    SDL_Rect getCollisionBox() const { return collisionBox; }
-    
-    // Teleport player to position
-    void setPosition(float newX, float newY) {
-        x = newX;
-        y = newY;
-        collisionBox.x = (int)x + 16;
-        collisionBox.y = (int)y + 32;
-    }
-};
-
-// Fishing game class
-class FishingGame {
-private:
-    FishingState state;
-    SDL_Texture* rodTexture;
-    SDL_Texture* fishTexture;
-    SDL_Texture* bubbleTexture;
-    int castTimer;
-    int waitingTimer;
-    int maxWaitTime;
-    SDL_Rect waterArea;
-    SDL_Rect bobberPosition;
-    SDL_Point fishPosition;
-    bool fishCaught;
-    int fishType;
-    int reelProgress;
-    int requiredProgress;
-    
-    std::mt19937 rng;
-    ParticleSystem particleSystem;
-    
-public:
-    FishingGame(SDL_Renderer* renderer) : particleSystem(renderer, "assets/fishing/bubble.png") {
-        state = NOT_FISHING;
-        castTimer = 0;
-        waitingTimer = 0;
-        maxWaitTime = 0;
-        fishCaught = false;
-        fishType = 0;
-        reelProgress = 0;
-        requiredProgress = 100;
-        
-        // Initialize random generator
-        std::random_device rd;
-        rng = std::mt19937(rd());
-        
-        // Define water area (lake position on screen)
-        waterArea = {300, 200, 680, 320};
-        
-        // Load textures
-        rodTexture = loadTexture(renderer, "assets/fishing_rod.png");
-        fishTexture = loadTexture(renderer, "assets/fishing/fish_types.png");
-        bubbleTexture = loadTexture(renderer, "assets/fishing/bubble.png");
-        
-        if (!rodTexture) {
-            std::cout << "Failed to load fishing rod texture" << std::endl;
-        }
-        if (!fishTexture) {
-            std::cout << "Failed to load fish texture" << std::endl;
-        }
-        if (!bubbleTexture) {
-            std::cout << "Failed to load bubble texture" << std::endl;
-        }
-    }
-    
-    ~FishingGame() {
-        if (rodTexture) SDL_DestroyTexture(rodTexture);
-        if (fishTexture) SDL_DestroyTexture(fishTexture);
-        if (bubbleTexture) SDL_DestroyTexture(bubbleTexture);
-    }
-    
-    bool isPlayerNearWater(const Player& player) {
-        SDL_Rect playerBox = player.getCollisionBox();
-        int extendedRange = 20;
-        
-        SDL_Rect expandedWaterArea = {
-            waterArea.x - extendedRange,
-            waterArea.y - extendedRange,
-            waterArea.w + (2 * extendedRange),
-            waterArea.h + (2 * extendedRange)
-        };
-        
-        return SDL_HasIntersection(&playerBox, &expandedWaterArea);
-    }
-    
-    void startFishing(const Player& player) {
-        if (state == NOT_FISHING && isPlayerNearWater(player)) {
-            state = CASTING;
-            castTimer = 0;
-            
-            // Calculate bobber position based on player's position
-            bobberPosition.x = (waterArea.x + waterArea.w / 2) - 16;
-            bobberPosition.y = (waterArea.y + waterArea.h / 2) - 16;
-            bobberPosition.w = 32;
-            bobberPosition.h = 32;
-            
-            std::cout << "Casting fishing rod..." << std::endl;
-        }
-    }
-    
-    void update(const Player& player) {
-        switch (state) {
-            case CASTING:
-                castTimer++;
-                if (castTimer >= 60) { // 1 second at 60 FPS
-                    state = WAITING_FOR_FISH;
-                    waitingTimer = 0;
-                    
-                    // Random wait time between 1 and 5 seconds
-                    std::uniform_int_distribution<int> dist(60, 300);
-                    maxWaitTime = dist(rng);
-                    
-                    std::cout << "Waiting for fish to bite..." << std::endl;
-                }
-                break;
-                
-            case WAITING_FOR_FISH:
-                waitingTimer++;
-                if (waitingTimer >= maxWaitTime) {
-                    state = FISH_BITING;
-                    
-                    // Generate random fish type (0-3)
-                    std::uniform_int_distribution<int> fishDist(0, 3);
-                    fishType = fishDist(rng);
-                    
-                    // Set fishing difficulty based on fish type
-                    requiredProgress = 60 + (fishType * 20); // 60, 80, 100, 120
-                    
-                    std::cout << "Fish is biting! Press E to catch!" << std::endl;
-                }
-                break;
-                
-            case FISH_BITING:
-                // Visual indicator - wait for player input
-                particleSystem.addBubbleParticles(bobberPosition.x + 16, bobberPosition.y + 16, 5);
-                break;
-                
-            case REELING:
-                // This is handled by key presses
-                break;
-                
-            case CAUGHT_FISH:
-                // Display caught fish for 2 seconds
-                castTimer++;
-                if (castTimer >= 120) {
-                    state = NOT_FISHING;
-                    fishCaught = false;
-                }
-                break;
-                
-            default:
-                break;
-        }
-        
-        // Update particle system
-        particleSystem.update();
-    }
-    
-    void handleInput(const Uint8* keystate, SDL_Event& event) {
-        // Handle specific key presses for fishing
-        if (state == FISH_BITING && (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_e)) {
-            state = REELING;
-            reelProgress = 0;
-            std::cout << "Reeling in the fish! Keep pressing E!" << std::endl;
-        }
-        
-        // Reel in fish with repeated key presses
-        if (state == REELING && (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_e)) {
-            std::uniform_int_distribution<int> progressDist(5, 15);
-            reelProgress += progressDist(rng);
-            
-            if (reelProgress >= requiredProgress) {
-                state = CAUGHT_FISH;
-                fishCaught = true;
-                castTimer = 0;
-                std::cout << "You caught a fish (type " << fishType << ")!" << std::endl;
-            }
-        }
-        
-        // Cancel fishing with X
-        if ((state == CASTING || state == WAITING_FOR_FISH || state == FISH_BITING) && 
-            (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_x)) {
-            state = NOT_FISHING;
-            std::cout << "Fishing canceled" << std::endl;
-        }
-    }
-    
-    void render(SDL_Renderer* renderer, const Player& player) {
-        // Draw water area
-        SDL_SetRenderDrawColor(renderer, 64, 164, 223, 160);
-        SDL_RenderFillRect(renderer, &waterArea);
-        
-        SDL_SetRenderDrawColor(renderer, 32, 128, 192, 255);
-        SDL_RenderDrawRect(renderer, &waterArea);
-        
-        // Render based on fishing state
-        switch (state) {
-            case CASTING: {
-                // Draw casting line
-                int playerX = player.getX() + 32;
-                int playerY = player.getY() + 32;
-                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-                SDL_RenderDrawLine(renderer, playerX, playerY, 
-                                  bobberPosition.x + 16, bobberPosition.y + 16);
-                
-                // Draw bobber
-                SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
-                SDL_RenderFillRect(renderer, &bobberPosition);
-                break;
-            }
-            
-            case WAITING_FOR_FISH:
-            case FISH_BITING: {
-                // Draw fishing line
-                int playerX = player.getX() + 32;
-                int playerY = player.getY() + 32;
-                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-                SDL_RenderDrawLine(renderer, playerX, playerY, 
-                                  bobberPosition.x + 16, bobberPosition.y + 16);
-                
-                // Draw bobber
-                SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
-                SDL_RenderFillRect(renderer, &bobberPosition);
-                
-                // Draw bubbles/ripples for FISH_BITING
-                if (state == FISH_BITING) {
-                    particleSystem.render(renderer);
-                }
-                break;
-            }
-            
-            case REELING: {
-                // Draw fishing line
-                int playerX = player.getX() + 32;
-                int playerY = player.getY() + 32;
-                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-                SDL_RenderDrawLine(renderer, playerX, playerY, 
-                                  bobberPosition.x + 16, bobberPosition.y + 16);
-                
-                // Draw bobber
-                SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
-                SDL_RenderFillRect(renderer, &bobberPosition);
-                
-                // Draw progress bar
-                SDL_Rect progressBarBg = {540, 650, 200, 20};
-                SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255);
-                SDL_RenderFillRect(renderer, &progressBarBg);
-                
-                SDL_Rect progressBar = {540, 650, (reelProgress * 200) / requiredProgress, 20};
-                SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
-                SDL_RenderFillRect(renderer, &progressBar);
-                
-                // Draw instruction text
-                // (This would require rendering text - for now, we'll use cout in the console)
-                break;
-            }
-            
-            case CAUGHT_FISH: {
-                // Display the caught fish
-                SDL_Rect fishRect = {540, 360, 64, 64};
-                
-                if (fishTexture) {
-                    SDL_Rect fishSrc = {fishType * 64, 0, 64, 64};
-                    SDL_RenderCopy(renderer, fishTexture, &fishSrc, &fishRect);
-                } else {
-                    // Fallback
-                    SDL_SetRenderDrawColor(renderer, 255, 215, 0, 255);
-                    SDL_RenderFillRect(renderer, &fishRect);
-                }
-                
-                // Draw text would go here
-                break;
-            }
-            
-            default:
-                break;
-        }
-        
-        // Render particle system
-        particleSystem.render(renderer);
-    }
-    
-    bool canStartFishing(const Player& player) {
-        return state == NOT_FISHING && isPlayerNearWater(player);
-    }
-    
-    FishingState getState() const {
-        return state;
-    }
-};
-
-// Button class with hover functionality
-class Button {
-private:
-    SDL_Rect rect;
-    SDL_Texture* texture;
-    std::function<void()> onClick;
-    std::string buttonText;  // Text to display if images unavailable
-    bool useTextFallback;   // Flag for using text instead of images
-    bool isHovered;         // Track hover state for fallback rendering
-
-public:
-    Button(SDL_Renderer* renderer, int x, int y, int w, int h, 
-           const std::string& imagePath, const std::string& hoverImagePath, 
-           std::function<void()> callback, const std::string& text = "") {
-        rect = {x, y, w, h};
-        onClick = callback;
-        buttonText = text;
-        useTextFallback = false;
-        isHovered = false;
-        
-        // Extract button text from filename if not provided
-        if (buttonText.empty()) {
-            // Extract filename from path
-            size_t lastSlash = imagePath.find_last_of("/\\");
-            std::string filename = imagePath.substr(lastSlash + 1);
-            
-            // Remove extension and "_btn" suffix
-            size_t dotPos = filename.find_last_of(".");
-            std::string baseName = filename.substr(0, dotPos);
-            
-            // Handle different button types
-            if (baseName == "play_btn") buttonText = "PLAY";
-            else if (baseName == "settings_btn") buttonText = "SETTINGS";
-            else if (baseName == "credit_btn") buttonText = "CREDITS";
-            else if (baseName == "back_btn") buttonText = "BACK";
-            else if (baseName == "vol_up") buttonText = "+";
-            else if (baseName == "vol_down") buttonText = "-";
-            else if (baseName == "lang_btn") buttonText = "LANGUAGE";
-            else if (baseName.find("level") != std::string::npos) {
-                // For level buttons, extract the level number
-                for (char c : baseName) {
-                    if (isdigit(c)) {
-                        buttonText = "LEVEL " + std::string(1, c);
-                        break;
-                    }
-                }
-            }
-        }
-        
-        // Check if the assets directory exists
-        SDL_RWops* file = SDL_RWFromFile(imagePath.c_str(), "rb");
-        if (!file) {
-            std::cout << "WARNING: Assets file not found: " << imagePath << std::endl;
-            std::cout << "Current working directory may be incorrect." << std::endl;
-            useTextFallback = true;
-            texture = nullptr;
-            return;
-        }
-        SDL_RWclose(file);
-        
-        // Load normal texture
-        SDL_Surface* surface = IMG_Load(imagePath.c_str());
-        if (surface == nullptr) {
-            std::cout << "Failed to load image: " << imagePath << " - " << IMG_GetError() << std::endl;
-            texture = nullptr;
-            useTextFallback = true;
-        } else {
-            texture = SDL_CreateTextureFromSurface(renderer, surface);
-            if (!texture) {
-                std::cout << "Failed to create texture from surface: " << SDL_GetError() << std::endl;
-                useTextFallback = true;
-            }
-            SDL_FreeSurface(surface);
-        }
-    }
-    
-    ~Button() {
-        if (texture) SDL_DestroyTexture(texture);
-    }
-    
-    bool handleEvent(const SDL_Event& event) {
-        if (event.type == SDL_MOUSEMOTION) {
-            int mouseX = event.motion.x;
-            int mouseY = event.motion.y;
-            isHovered = (mouseX >= rect.x && mouseX < rect.x + rect.w &&
-                         mouseY >= rect.y && mouseY < rect.y + rect.h);
-        }
-        
-        if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {
-            int mouseX = event.button.x;
-            int mouseY = event.button.y;
-            if (mouseX >= rect.x && mouseX < rect.x + rect.w &&
-                mouseY >= rect.y && mouseY < rect.y + rect.h) {
-                onClick();
-                return true;
-            }
-        }
-        return false;
-    }
-    
-    void render(SDL_Renderer* renderer, TTF_Font* font = nullptr) {
-        if (!useTextFallback && (texture != nullptr)) {
-            // Use the image if available
-            SDL_RenderCopy(renderer, texture, nullptr, &rect);
-        } else {
-            // Draw a colored rectangle with text as fallback
-            // Use a brighter color when hovered
-            if (isHovered) {
-                SDL_SetRenderDrawColor(renderer, 100, 100, 220, 255);
-            } else {
-                SDL_SetRenderDrawColor(renderer, 70, 70, 200, 255);
-            }
-            
-            // Draw button background
-            SDL_RenderFillRect(renderer, &rect);
-            
-            // Draw button border
-            SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
-            SDL_RenderDrawRect(renderer, &rect);
-            
-            // Render text if font is provided
-            if (font != nullptr) {
-                renderTextOnButton(renderer, font);
-            } else {
-                // Fallback if no font: draw a simple visual indicator (horizontal line)
-                int lineWidth = buttonText.length() * 8;
-                int lineX = rect.x + (rect.w - lineWidth) / 2;
-                int lineY = rect.y + rect.h / 2;
-                
-                SDL_Rect textIndicator = {lineX, lineY, lineWidth, 2};
-                SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-                SDL_RenderFillRect(renderer, &textIndicator);
-                
-                // Also draw the text directly as debug info
-                std::cout << "Button at (" << rect.x << "," << rect.y << ") with text: " << buttonText << std::endl;
-            }
-        }
-    }
-    
-    void renderTextOnButton(SDL_Renderer* renderer, TTF_Font* font) {
-        if (!font) return;
-        
-        SDL_Color textColor = {255, 255, 255, 255}; // White text
-        SDL_Surface* textSurface = TTF_RenderText_Blended(font, buttonText.c_str(), textColor);
-        if (textSurface) {
-            SDL_Texture* textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
-            
-            // Calculate position to center text in button
-            SDL_Rect textRect;
-            textRect.w = textSurface->w;
-            textRect.h = textSurface->h;
-            textRect.x = rect.x + (rect.w - textRect.w) / 2;
-            textRect.y = rect.y + (rect.h - textRect.h) / 2;
-            
-            // Render text
-            SDL_RenderCopy(renderer, textTexture, NULL, &textRect);
-            
-            // Clean up
-            SDL_FreeSurface(textSurface);
-            SDL_DestroyTexture(textTexture);
-        }
-    }
-};
-
-// Load texture function
-SDL_Texture* loadTexture(SDL_Renderer* renderer, const std::string& path) {
-    SDL_Surface* surface = IMG_Load(path.c_str());
-    if (surface == nullptr) {
-        std::cout << "Failed to load image: " << path << " - " << IMG_GetError() << std::endl;
-        return nullptr;
-    }
-    
-    SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
-    SDL_FreeSurface(surface);
-    return texture;
-}
 
 int main(int argc, char* argv[]) {
-    // Khởi tạo SDL
-    SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
-    IMG_Init(IMG_INIT_PNG);
-    Mix_Init(MIX_INIT_MP3);
-    Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048);
-    
-    // Initialize TTF
-    if (TTF_Init() == -1) {
-        std::cout << "Failed to initialize SDL_ttf: " << TTF_GetError() << std::endl;
+    // Initialize SDL
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
+        std::cout << "SDL could not initialize! SDL Error: " << SDL_GetError() << std::endl;
         return -1;
     }
 
-    // Print current working directory to help diagnose path issues
-    char currentPath[FILENAME_MAX];
-    #ifdef _WIN32
-        _getcwd(currentPath, sizeof(currentPath));
-    #else
-        getcwd(currentPath, sizeof(currentPath));
-    #endif
-    std::cout << "Current working directory: " << currentPath << std::endl;
-    
-    // Check if the assets directory exists
-    SDL_RWops* file = SDL_RWFromFile("assets/fonts/arial.ttf", "rb");
-    if (!file) {
-        std::cout << "WARNING: Font file not found. Make sure the assets directory exists." << std::endl;
-        std::cout << "Try running the program from the project's root directory." << std::endl;
-    } else {
-        SDL_RWclose(file);
+    // Initialize SDL_image
+    int imgFlags = IMG_INIT_PNG;
+    if (!(IMG_Init(imgFlags) & imgFlags)) {
+        std::cout << "SDL_image could not initialize! SDL_image Error: " << IMG_GetError() << std::endl;
+        SDL_Quit();
+        return -1;
     }
 
-    // Tạo cửa sổ
-    SDL_Window* window = SDL_CreateWindow(
-        "Game Menu",
+    // Initialize SDL_ttf
+    if (TTF_Init() == -1) {
+        std::cout << "SDL_ttf could not initialize! SDL_ttf Error: " << TTF_GetError() << std::endl;
+        IMG_Quit();
+        SDL_Quit();
+        return -1;
+    }
+    
+    // Initialize SDL_mixer
+    if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
+        std::cout << "SDL_mixer could not initialize! SDL_mixer Error: " << Mix_GetError() << std::endl;
+        // Continue without audio
+    }
+
+    // Create window
+    window = SDL_CreateWindow(
+        "Sokoban Game",
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
         1280, 720,
-        0
+        SDL_WINDOW_SHOWN
     );
 
-    // Tạo renderer
+    if (!window) {
+        std::cout << "Window could not be created! SDL Error: " << SDL_GetError() << std::endl;
+        TTF_Quit();
+        IMG_Quit();
+        SDL_Quit();
+        return -1;
+    }
+
+    // Create renderer
     SDL_Renderer* renderer = SDL_CreateRenderer(
         window,
         -1,
         SDL_RENDERER_ACCELERATED
     );
-    
-    // Load font
-    TTF_Font* buttonFont = TTF_OpenFont("assets/fonts/arial.ttf", 24);
-    if (!buttonFont) {
-        std::cout << "Failed to load font: " << TTF_GetError() << std::endl;
-        // Try different font paths if the original path doesn't work
-        std::cout << "Trying alternative font path..." << std::endl;
-        buttonFont = TTF_OpenFont("./assets/fonts/arial.ttf", 24);
-        
-        if (!buttonFont) {
-            // If Arial is not available, try any system font
-            #ifdef _WIN32
-            buttonFont = TTF_OpenFont("C:/Windows/Fonts/arial.ttf", 24);
-            #elif defined(__APPLE__)
-            buttonFont = TTF_OpenFont("/Library/Fonts/Arial.ttf", 24);
-            #else
-            buttonFont = TTF_OpenFont("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 24);
-            #endif
-        }
-    }
 
-    // Game state
-    GameState currentState = MAIN_MENU;
-    
-    // Volume settings
-    int musicVolume = MIX_MAX_VOLUME;
-    int sfxVolume = MIX_MAX_VOLUME;
-    std::string currentLanguage = "English";
-    
-    // Load background textures
-    SDL_Texture* mainMenuBg = loadTexture(renderer, "assets/main_menu_bg.png");
-    SDL_Texture* levelSelectBg = loadTexture(renderer, "assets/level_select_bg.png"); 
-    SDL_Texture* settingsBg = loadTexture(renderer, "assets/settings_bg.png");
-    
-    // Create main menu buttons
-    std::vector<Button> mainMenuButtons;
-    mainMenuButtons.push_back(Button(renderer, 500, 300, 280, 80, "assets/play_btn.png", 
-                                   "assets/play_btn_hover.png", 
-                                   [&currentState]() { currentState = LEVEL_SELECT; }));
-    
-    mainMenuButtons.push_back(Button(renderer, 500, 400, 280, 80, "assets/settings_btn.png", 
-                                   "assets/settings_btn_hover.png", 
-                                   [&currentState]() { currentState = SETTINGS; }));
-    
-    // Add Credits button at the bottom-right corner
-    mainMenuButtons.push_back(Button(renderer, 1100, 640, 150, 60, "assets/credit_btn.png", 
-                                   "assets/credit_btn_hover.png", 
-                                   []() { 
-                                       std::cout << "Credits - Game developed by [Your Name]\n"; 
-                                       // You could also create a new CREDITS state and screen instead
-                                   }));
-    
-    // Create level select buttons
-    std::vector<Button> levelSelectButtons;
-    for (int i = 0; i < 5; i++) {
-        std::function<void()> callback;
-        
-        if (i == 0) {
-            // Level 1 - Fishing Game
-            callback = [&currentState]() { 
-                std::cout << "Starting fishing game (Level 1)\n"; 
-                currentState = GAME_PLAYING; 
-            };
-        } else {
-            // Other levels - just print message
-            callback = [i]() { std::cout << "Level " << i+1 << " selected\n"; };
-        }
-        
-        levelSelectButtons.push_back(Button(renderer, 500 + (i%3)*250, 300 + (i/3)*150, 200, 100, 
-                                           "assets/level" + std::to_string(i+1) + "_btn.png", 
-                                           "assets/level" + std::to_string(i+1) + "_btn_hover.png", 
-                                           callback));
+    if (!renderer) {
+        std::cout << "Renderer could not be created! SDL Error: " << SDL_GetError() << std::endl;
+        SDL_DestroyWindow(window);
+        TTF_Quit();
+        IMG_Quit();
+        SDL_Quit();
+        return -1;
     }
     
-    // Back button for level select
-    levelSelectButtons.push_back(Button(renderer, 50, 50, 100, 50, "assets/back_btn.png", 
-                                      "assets/back_btn_hover.png", 
-                                      [&currentState]() { currentState = MAIN_MENU; }));
+    // Load fonts
+    TTF_Font* font = TTF_OpenFont("assets/fonts/arial.ttf", 24);
+    TTF_Font* largeFont = TTF_OpenFont("assets/fonts/arial.ttf", 48);
+    if (!font || !largeFont) {
+        std::cout << "Failed to load font! SDL_ttf Error: " << TTF_GetError() << std::endl;
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        TTF_Quit();
+        IMG_Quit();
+        SDL_Quit();
+        return -1;
+    }
     
-    // Create settings buttons
-    std::vector<Button> settingsButtons;
-    // Volume up/down buttons
-    settingsButtons.push_back(Button(renderer, 700, 300, 50, 50, "assets/vol_up.png", 
-                                   "assets/vol_up_hover.png", 
-                                   [&musicVolume]() { 
-                                       musicVolume = std::min(musicVolume + 10, MIX_MAX_VOLUME);
-                                       Mix_VolumeMusic(musicVolume);
-                                   }));
+    // Load high scores
+    if (!loadHighScores("highscores.dat")) {
+        std::cout << "No high score file found, will create one when scores are saved." << std::endl;
+    }
     
-    settingsButtons.push_back(Button(renderer, 400, 300, 50, 50, "assets/vol_down.png", 
-                                   "assets/vol_down_hover.png", 
-                                   [&musicVolume]() { 
-                                       musicVolume = std::max(musicVolume - 10, 0);
-                                       Mix_VolumeMusic(musicVolume);
-                                   }));
+    // Load settings
+    if (!loadSettings("game_settings.dat")) {
+        std::cout << "No settings file found, using default settings." << std::endl;
+    }
     
-    // Language toggle
-    settingsButtons.push_back(Button(renderer, 530, 450, 220, 60, "assets/lang_btn.png", 
-                                   "assets/lang_btn_hover.png", 
-                                   [&currentLanguage]() { 
-                                       if (currentLanguage == "English") currentLanguage = "Vietnamese";
-                                       else currentLanguage = "English";
-                                   }));
+    // Initialize game data
+    initGame();
     
-    // Back button for settings
-    settingsButtons.push_back(Button(renderer, 50, 50, 100, 50, "assets/back_btn.png", 
-                                   "assets/back_btn_hover.png", 
-                                   [&currentState]() { currentState = MAIN_MENU; }));
+    // Load game textures
+    if (!gameTextures.loadTextures(renderer)) {
+        std::cout << "Failed to load game textures!" << std::endl;
+        TTF_CloseFont(largeFont);
+        TTF_CloseFont(font);
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        TTF_Quit();
+        IMG_Quit();
+        SDL_Quit();
+        return -1;
+    }
+    
+    // Load audio files
+    backgroundMusic = Mix_LoadMUS("assets/sounds/bgm/background.mp3");
+    if (!backgroundMusic) {
+        std::cout << "Failed to load background music! SDL_mixer Error: " << Mix_GetError() << std::endl;
+    }
+    else if (game.settings.bgmEnabled) {
+        Mix_PlayMusic(backgroundMusic, -1);  // -1 means loop indefinitely
+    }
+    
+    // Load sound effects
+    soundEffects[0] = Mix_LoadWAV("assets/sounds/move.wav");
+    soundEffects[1] = Mix_LoadWAV("assets/sounds/push.wav"); 
+    soundEffects[2] = Mix_LoadWAV("assets/sounds/complete.wav");
 
-    // Create player and fishing game
-    Player player(renderer, 640, 500);
-    FishingGame fishingGame(renderer);
+    // Initialize menu background
+    if (!initMenuBackground(renderer)) {
+        std::cout << "Failed to initialize menu background!" << std::endl;
+        TTF_CloseFont(largeFont);
+        TTF_CloseFont(font);
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        TTF_Quit();
+        IMG_Quit();
+        SDL_Quit();
+        return -1;
+    }
     
-    // Load fishing level background
-    SDL_Texture* fishingLevelBg = loadTexture(renderer, "assets/fishing_level_bg.png");
+    // Apply fullscreen setting if enabled
+    if (game.settings.fullscreenEnabled) {
+        SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
+    }
 
-    // Game loop variables
+    // Main loop
     bool running = true;
-    const Uint8* keyboardState = SDL_GetKeyboardState(NULL);
-    
-    // Vòng lặp chính
+    SDL_Event event;
+
     while (running) {
-        // Xử lý sự kiện
-        SDL_Event event;
+        // Handle events
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) {
                 running = false;
             }
             
-            // Handle button events based on current state
-            switch (currentState) {
-                case MAIN_MENU:
-                    for (auto& button : mainMenuButtons) {
-                        button.handleEvent(event);
-                    }
-                    break;
-                    
-                case LEVEL_SELECT:
-                    for (auto& button : levelSelectButtons) {
-                        button.handleEvent(event);
-                    }
-                    break;
-                    
-                case SETTINGS:
-                    for (auto& button : settingsButtons) {
-                        button.handleEvent(event);
-                    }
-                    break;
-                    
-                case GAME_PLAYING:
-                    // Check for fishing action key (E)
-                    if (event.type == SDL_KEYDOWN) {
-                        if (event.key.keysym.sym == SDLK_e && 
-                            fishingGame.canStartFishing(player)) {
-                            fishingGame.startFishing(player);
-                        }
-                        // Handle fishing input
-                        fishingGame.handleInput(keyboardState, event);
-                        
-                        // Back to level select on ESC
-                        if (event.key.keysym.sym == SDLK_ESCAPE) {
-                            currentState = LEVEL_SELECT;
-                        }
-                    }
-                    break;
-                    
-                default:
-                    break;
+            // Pass all keyboard events to handleInput, it will handle them based on game state
+            if (event.type == SDL_KEYDOWN) {
+                handleInput(event);
             }
-        }
-        
-        // Update game state
-        if (currentState == GAME_PLAYING) {
-            // Update player only if not fishing or just casting
-            if (fishingGame.getState() == NOT_FISHING || 
-                fishingGame.getState() == CASTING) {
-                player.handleInput(keyboardState);
-                player.update();
-            }
-            
-            // Update fishing game
-            fishingGame.update(player);
         }
 
-        // Clear screen
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        // Clear screen with dark gray background
+        SDL_SetRenderDrawColor(renderer, 64, 64, 64, 255);
         SDL_RenderClear(renderer);
         
-        // Render based on current state
-        switch (currentState) {
-            case MAIN_MENU:
-                if (mainMenuBg) {
-                    SDL_RenderCopy(renderer, mainMenuBg, nullptr, nullptr);
-                }
-                for (auto& button : mainMenuButtons) {
-                    button.render(renderer, buttonFont);
-                }
-                break;
-                
-            case LEVEL_SELECT:
-                if (levelSelectBg) {
-                    SDL_RenderCopy(renderer, levelSelectBg, nullptr, nullptr);
-                }
-                for (auto& button : levelSelectButtons) {
-                    button.render(renderer, buttonFont);
-                }
-                break;
-                
-            case SETTINGS:
-                if (settingsBg) {
-                    SDL_RenderCopy(renderer, settingsBg, nullptr, nullptr);
-                }
-                for (auto& button : settingsButtons) {
-                    button.render(renderer, buttonFont);
-                }
-                break;
-                
-            case GAME_PLAYING:
-                // Draw level background
-                if (fishingLevelBg) {
-                    SDL_RenderCopy(renderer, fishingLevelBg, nullptr, nullptr);
-                } else {
-                    // Fallback background with grass and sky
-                    SDL_Rect skyRect = {0, 0, 1280, 400};
-                    SDL_Rect grassRect = {0, 400, 1280, 320};
-                    
-                    SDL_SetRenderDrawColor(renderer, 135, 206, 235, 255); // Sky blue
-                    SDL_RenderFillRect(renderer, &skyRect);
-                    
-                    SDL_SetRenderDrawColor(renderer, 34, 139, 34, 255); // Forest green
-                    SDL_RenderFillRect(renderer, &grassRect);
-                }
-                
-                // Render fishing game (water, fish, rod, etc.)
-                fishingGame.render(renderer, player);
-                
-                // Render player character
-                player.render(renderer);
-                
-                // Render UI text for fishing
-                if (fishingGame.canStartFishing(player)) {
-                    // Display "Press E to fish" text
-                    // This would require text rendering
-                }
-                break;
-                
-            default:
-                break;
+        // Render game elements based on current state
+        if (game.currentState == MENU) {
+            // Render the menu
+            renderMenu(renderer, font);        } else if (game.currentState == PLAYING) {
+            // First draw the game background
+            if (gameLevelBackgroundTexture) {
+                SDL_RenderCopy(renderer, gameLevelBackgroundTexture, nullptr, nullptr);
+            }
+            
+            // Render the active level
+            renderLevel(renderer, game.activeLevel, game.player, gameTextures);
+            
+            // Render HUD
+            renderHUD(renderer, font, currentLevelIndex + 1, game.player.moves, game.player.pushes);} else if (game.currentState == LEVEL_COMPLETE) {
+            // First draw the game level background
+            if (gameLevelBackgroundTexture) {
+                SDL_RenderCopy(renderer, gameLevelBackgroundTexture, nullptr, nullptr);
+            }
+            
+            // Then render the level
+            renderLevel(renderer, game.activeLevel, game.player, gameTextures);
+            
+            // Finally render the completion overlay and message
+            renderLevelComplete(renderer, font, largeFont, currentLevelIndex + 1, game.player.moves, game.player.pushes);
+        } else if (game.currentState == GAME_OVER) {
+            // Render the game completion screen
+            renderGameComplete(renderer, font, largeFont, game.player.moves, game.player.pushes);
+        } else if (game.currentState == LEVEL_SELECT) {
+            // Render the level selection screen
+            renderLevelSelect(renderer, font);
+        } else if (game.currentState == SETTINGS) {
+            // Render the settings menu
+            renderSettings(renderer, font);
+        } else if (game.currentState == SKIN_SELECT) {
+            // Render the skin selection screen
+            renderSkinSelect(renderer, font);
         }
         
-        // Hiển thị màn hình
+        // Present the renderer
         SDL_RenderPresent(renderer);
         
-        // Giới hạn FPS
-        SDL_Delay(16);
+        // Cap the frame rate
+        SDL_Delay(16);  // ~60 FPS
+        
+        // Check win condition if playing
+        if (game.currentState == PLAYING && checkWinCondition(&game.activeLevel)) {
+            // Check if this is a new high score
+            game.isNewRecord = isNewHighScore(currentLevelIndex, game.player.moves, game.player.pushes);
+            
+            // Save high scores to file
+            if (game.isNewRecord) {
+                saveHighScores("highscores.dat");
+            }
+            
+            // Change game state to level complete
+            game.currentState = LEVEL_COMPLETE;
+        }
     }
 
-    // Giải phóng bộ nhớ
-    if (mainMenuBg) SDL_DestroyTexture(mainMenuBg);
-    if (levelSelectBg) SDL_DestroyTexture(levelSelectBg);
-    if (settingsBg) SDL_DestroyTexture(settingsBg);
-    if (fishingLevelBg) SDL_DestroyTexture(fishingLevelBg);
-    
-    // Clean up font
-    if (buttonFont) TTF_CloseFont(buttonFont);
-    
+    // Save high scores before exiting
+    saveHighScores("highscores.dat");
+
+    // Clean up
+    cleanupMenuResources();
+    TTF_CloseFont(largeFont);
+    TTF_CloseFont(font);
+    gameTextures.destroyTextures();
+    if (backgroundMusic) {
+        Mix_FreeMusic(backgroundMusic);
+    }
+    for (int i = 0; i < 3; i++) {
+        if (soundEffects[i]) {
+            Mix_FreeChunk(soundEffects[i]);
+        }
+    }
+    Mix_CloseAudio();
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
-    Mix_CloseAudio();
-    Mix_Quit();
-    TTF_Quit();  // Quit TTF
+    TTF_Quit();
     IMG_Quit();
     SDL_Quit();
 
     return 0;
+}
+
+// Initialize game data with level loading from file
+void initGame() {
+    // Initialize game state
+    game.currentState = MENU;
+    
+    // Load the current level from file to prepare it
+    if (!loadLevelFromFile(levelFileNames[currentLevelIndex].c_str(), &game.activeLevel)) {
+        std::cerr << "Error: Failed to load level from " << levelFileNames[currentLevelIndex] << std::endl;
+        exit(-1);
+    }
+    
+    // We don't initialize the level and player until the game actually starts from the menu
+}
+
+// Handle player input
+void handleInput(SDL_Event& event) {
+    if (event.type != SDL_KEYDOWN) {
+        return;
+    }
+    
+    // Handle menu state
+    if (game.currentState == MENU) {
+        switch (event.key.keysym.sym) {
+            case SDLK_UP:
+                // Navigate up in the menu
+                do {
+                    currentMenuSelection = (currentMenuSelection - 1 + MENU_COUNT) % MENU_COUNT;
+                } while (currentMenuSelection == MENU_SELECT_LEVEL && !totalLoadedLevels); // Skip level select if no levels
+                break;
+            case SDLK_DOWN:
+                // Navigate down in the menu
+                do {
+                    currentMenuSelection = (currentMenuSelection + 1) % MENU_COUNT;
+                } while (currentMenuSelection == MENU_SELECT_LEVEL && !totalLoadedLevels); // Skip level select if no levels
+                break;
+            case SDLK_RETURN:
+            case SDLK_SPACE:
+                // Process menu selection
+                if (currentMenuSelection == MENU_START_GAME) {
+                    // Start the game with the first level
+                    currentLevelIndex = 0;
+                    if (!loadLevelFromFile(levelFileNames[currentLevelIndex].c_str(), &game.activeLevel)) {
+                        std::cerr << "Error: Failed to load level from " << levelFileNames[currentLevelIndex] << std::endl;
+                        exit(-1);
+                    }
+                    // Clear move history
+                    game.moveHistory.clear();
+                    game.isNewRecord = false;
+                    
+                    initializeLevel(&game.activeLevel, &game.player, game.activeLevel.playerStartX, game.activeLevel.playerStartY);
+                    game.currentState = PLAYING;
+                } 
+                else if (currentMenuSelection == MENU_SELECT_LEVEL) {
+                    // Go to level select screen
+                    game.currentState = LEVEL_SELECT;
+                }
+                else if (currentMenuSelection == MENU_SETTINGS) {
+                    // Go to settings screen
+                    game.currentState = SETTINGS;
+                }
+                else if (currentMenuSelection == MENU_SELECT_SKIN) {
+                    // Go to skin selection screen
+                    game.currentState = SKIN_SELECT;
+                }
+                else if (currentMenuSelection == MENU_QUIT) {
+                    // Set flag to exit game in main loop
+                    SDL_Event quitEvent;
+                    quitEvent.type = SDL_QUIT;
+                    SDL_PushEvent(&quitEvent);
+                }
+                break;
+            default:
+                break;
+        }
+        return;
+    }
+    
+    // Handle level select state
+    if (game.currentState == LEVEL_SELECT) {
+        switch (event.key.keysym.sym) {
+            case SDLK_ESCAPE:
+                // Return to main menu
+                game.currentState = MENU;
+                return;
+            
+            case SDLK_UP:
+                // Navigate up (to previous row)
+                if (currentLevelIndex >= 4) {
+                    currentLevelIndex -= 4;
+                }
+                return;
+                
+            case SDLK_DOWN:
+                // Navigate down (to next row)
+                if (currentLevelIndex + 4 < totalLoadedLevels) {
+                    currentLevelIndex += 4;
+                }
+                return;
+                
+            case SDLK_LEFT:
+                // Navigate left
+                if (currentLevelIndex > 0) {
+                    currentLevelIndex--;
+                }
+                return;
+                
+            case SDLK_RIGHT:
+                // Navigate right
+                if (currentLevelIndex + 1 < totalLoadedLevels) {
+                    currentLevelIndex++;
+                }
+                return;
+                
+            case SDLK_PAGEUP:
+                // Navigate to previous page
+                if (currentLevelIndex >= 16) {
+                    currentLevelIndex -= 16;
+                }
+                return;
+                
+            case SDLK_PAGEDOWN:
+                // Navigate to next page
+                if (currentLevelIndex + 16 < totalLoadedLevels) {
+                    currentLevelIndex += 16;
+                } else if (totalLoadedLevels > 0) {
+                    // Go to last level if can't go to next page
+                    currentLevelIndex = totalLoadedLevels - 1;
+                }
+                return;
+                
+            case SDLK_HOME:
+                // Go to first level
+                currentLevelIndex = 0;
+                return;
+                
+            case SDLK_END:
+                // Go to last level
+                if (totalLoadedLevels > 0) {
+                    currentLevelIndex = totalLoadedLevels - 1;
+                }
+                return;
+                
+            case SDLK_RETURN:
+            case SDLK_SPACE:
+                // Select the current level
+                // Load the selected level
+                if (!loadLevelFromFile(levelFileNames[currentLevelIndex].c_str(), &game.activeLevel)) {
+                    std::cerr << "Error: Failed to load level from " << levelFileNames[currentLevelIndex] << std::endl;
+                    exit(-1);
+                }
+                
+                // Clear move history
+                game.moveHistory.clear();
+                game.isNewRecord = false;
+                
+                // Initialize level and player
+                initializeLevel(&game.activeLevel, &game.player, game.activeLevel.playerStartX, game.activeLevel.playerStartY);
+                
+                // Change state to playing
+                game.currentState = PLAYING;
+                return;
+        }
+        
+        return;
+    }
+    
+    // Handle settings state
+    if (game.currentState == SETTINGS) {
+        switch (event.key.keysym.sym) {
+            case SDLK_ESCAPE:
+                // Return to main menu
+                game.currentState = MENU;
+                return;
+            
+            case SDLK_UP:
+                // Navigate up in settings
+                currentSettingsSelection = (currentSettingsSelection - 1 + SETTINGS_COUNT) % SETTINGS_COUNT;
+                return;
+                
+            case SDLK_DOWN:
+                // Navigate down in settings
+                currentSettingsSelection = (currentSettingsSelection + 1) % SETTINGS_COUNT;
+                return;
+                
+            case SDLK_LEFT:
+                // Change setting value to the left
+                if (currentSettingsSelection == SETTINGS_BACKGROUND_MUSIC) {
+                    game.settings.bgmEnabled = !game.settings.bgmEnabled;
+                    if (game.settings.bgmEnabled && backgroundMusic) {
+                        Mix_PlayMusic(backgroundMusic, -1);
+                    } else {
+                        Mix_HaltMusic();
+                    }
+                } else if (currentSettingsSelection == SETTINGS_SOUND_EFFECTS) {
+                    game.settings.sfxEnabled = !game.settings.sfxEnabled;
+                }
+                return;
+                
+            case SDLK_RIGHT:
+                // Change setting value to the right
+                if (currentSettingsSelection == SETTINGS_BACKGROUND_MUSIC) {
+                    game.settings.bgmEnabled = !game.settings.bgmEnabled;
+                    if (game.settings.bgmEnabled && backgroundMusic) {
+                        Mix_PlayMusic(backgroundMusic, -1);
+                    } else {
+                        Mix_HaltMusic();
+                    }
+                } else if (currentSettingsSelection == SETTINGS_SOUND_EFFECTS) {
+                    game.settings.sfxEnabled = !game.settings.sfxEnabled;
+                }
+                return;
+                
+            case SDLK_RETURN:
+            case SDLK_SPACE:
+                // Select the current setting
+                if (currentSettingsSelection == SETTINGS_BACK) {
+                    game.currentState = MENU;
+                }
+                return;
+        }
+        
+        return;
+    }
+    
+    // Handle skin select state
+    if (game.currentState == SKIN_SELECT) {
+        switch (event.key.keysym.sym) {
+            case SDLK_ESCAPE:
+                // Return to main menu
+                game.currentState = MENU;
+                return;
+            
+            case SDLK_UP:
+                // Navigate to the "Back to Main Menu" option
+                currentSkinSelection = SKIN_COUNT;
+                return;
+                
+            case SDLK_DOWN:
+                // If on "Back" option, go to first skin, otherwise stay on current skin
+                if (currentSkinSelection == SKIN_COUNT) {
+                    currentSkinSelection = 0;
+                }
+                return;
+                
+            case SDLK_LEFT:
+                // Navigate left in skin selection (previous skin)
+                if (currentSkinSelection < SKIN_COUNT) {
+                    // Only cycle through actual skins, not the back option
+                    currentSkinSelection = (currentSkinSelection - 1 + SKIN_COUNT) % SKIN_COUNT;
+                }
+                return;
+                
+            case SDLK_RIGHT:
+                // Navigate right in skin selection (next skin)
+                if (currentSkinSelection < SKIN_COUNT) {
+                    // Only cycle through actual skins, not the back option
+                    currentSkinSelection = (currentSkinSelection + 1) % SKIN_COUNT;
+                }
+                return;
+                
+            case SDLK_RETURN:
+            case SDLK_SPACE:
+                // Select the current skin
+                if (currentSkinSelection < SKIN_COUNT) {
+                    game.settings.currentSkin = static_cast<PlayerSkin>(currentSkinSelection);
+                    // Save the settings when skin is changed
+                    saveSettings("game_settings.dat");
+                } 
+                game.currentState = MENU;
+                return;
+        }
+        
+        return;
+    }
+    
+    // Handle level complete state
+    if (game.currentState == LEVEL_COMPLETE) {
+        if (event.key.keysym.sym == SDLK_SPACE) {
+            // Move to the next level
+            currentLevelIndex++;
+            
+            // Check if there are more levels to play
+            if (currentLevelIndex < totalLoadedLevels) {
+                // Load the next level
+                if (!loadLevelFromFile(levelFileNames[currentLevelIndex].c_str(), &game.activeLevel)) {
+                    std::cerr << "Error: Failed to load level from " << levelFileNames[currentLevelIndex] << std::endl;
+                    exit(-1);
+                }
+                
+                // Clear move history for new level
+                game.moveHistory.clear();
+                game.isNewRecord = false;
+                
+                // Initialize the level and player
+                initializeLevel(&game.activeLevel, &game.player, game.activeLevel.playerStartX, game.activeLevel.playerStartY);
+                
+                // Change state back to playing
+                game.currentState = PLAYING;
+            } else {
+                // All levels completed, game over
+                game.currentState = GAME_OVER;
+            }
+        }
+        return;
+    }
+    
+    // Handle game over state
+    if (game.currentState == GAME_OVER) {
+        switch(event.key.keysym.sym) {
+            case SDLK_ESCAPE:
+                // Return to menu
+                game.currentState = MENU;
+                break;
+            case SDLK_q:
+                // Quit the game
+                SDL_Event quitEvent;
+                quitEvent.type = SDL_QUIT;
+                SDL_PushEvent(&quitEvent);
+                break;
+        }
+        return;
+    }
+    
+    // Handle gameplay (PLAYING state)
+    if (game.currentState == PLAYING) {
+        int dx = 0, dy = 0;
+        
+        switch (event.key.keysym.sym) {
+            case SDLK_UP:
+                dy = -1;
+                break;
+            case SDLK_DOWN:
+                dy = 1;
+                break;
+            case SDLK_LEFT:
+                dx = -1;
+                break;
+            case SDLK_RIGHT:
+                dx = 1;
+                break;
+            case SDLK_z:  // Undo last move
+                undoMove();
+                return;
+            case SDLK_r:  // Reset current level
+                initializeLevel(&game.activeLevel, &game.player, game.activeLevel.playerStartX, game.activeLevel.playerStartY);
+                game.moveHistory.clear(); // Clear move history on reset
+                return;
+            case SDLK_n:  // Next level
+                if (currentLevelIndex < totalLoadedLevels - 1) {
+                    currentLevelIndex++;
+                    game.moveHistory.clear(); // Clear move history
+                    game.isNewRecord = false;
+                    if (!loadLevelFromFile(levelFileNames[currentLevelIndex].c_str(), &game.activeLevel)) {
+                        std::cerr << "Error: Failed to load level from " << levelFileNames[currentLevelIndex] << std::endl;
+                        exit(-1);
+                    }
+                    initializeLevel(&game.activeLevel, &game.player, game.activeLevel.playerStartX, game.activeLevel.playerStartY);
+                }
+                return;
+            case SDLK_p:  // Previous level
+                if (currentLevelIndex > 0) {
+                    currentLevelIndex--;
+                    game.moveHistory.clear(); // Clear move history
+                    game.isNewRecord = false;
+                    if (!loadLevelFromFile(levelFileNames[currentLevelIndex].c_str(), &game.activeLevel)) {
+                        std::cerr << "Error: Failed to load level from " << levelFileNames[currentLevelIndex] << std::endl;
+                        exit(-1);
+                    }
+                    initializeLevel(&game.activeLevel, &game.player, game.activeLevel.playerStartX, game.activeLevel.playerStartY);
+                }
+                return;
+            case SDLK_ESCAPE:  // Return to menu
+                game.currentState = MENU;
+                return;
+            default:
+                return;  // Ignore other keys
+        }
+        
+        if (dx != 0 || dy != 0) {
+            // Record state before move
+            MoveRecord moveRecord;
+            moveRecord.playerPos = {game.player.x, game.player.y};
+            moveRecord.wasBoxMoved = false;
+            
+            // Calculate target position
+            int targetX = game.player.x + dx;
+            int targetY = game.player.y + dy;
+            Level& level = game.activeLevel;
+            
+            // Check if target position is valid
+            if (targetX < 0 || targetX >= level.width || targetY < 0 || targetY >= level.height) {
+                return;  // Out of bounds
+            }
+            
+            // Get the tile type at the target position
+            TileType targetTile = level.currentMap[targetY][targetX];
+            
+            // Movement logic based on target tile
+            if (targetTile == WALL) {
+                return;  // Can't move into walls
+            }
+            else if (targetTile == EMPTY || targetTile == TARGET) {
+                // Basic movement - determine what tile to leave behind
+                bool wasOnTarget = (level.originalMap[game.player.y][game.player.x] == TARGET);
+                
+                // Update the current player position tile
+                if (wasOnTarget) {
+                    level.currentMap[game.player.y][game.player.x] = TARGET;
+                } else {
+                    level.currentMap[game.player.y][game.player.x] = EMPTY;
+                }
+                
+                // Update the player's position
+                game.player.x = targetX;
+                game.player.y = targetY;
+                
+                // Update the new player position tile
+                if (targetTile == TARGET) {
+                    level.currentMap[targetY][targetX] = PLAYER_ON_TARGET;
+                } else {
+                    level.currentMap[targetY][targetX] = PLAYER;
+                }
+                
+                // Record the move
+                recordMove(moveRecord);
+                
+                // Increment move counter
+                game.player.moves++;
+                
+                // Play move sound effect
+                if (game.settings.sfxEnabled && soundEffects[0]) {
+                    Mix_PlayChannel(-1, soundEffects[0], 0);
+                }
+            }
+            else if (targetTile == BOX || targetTile == BOX_ON_TARGET) {
+                // Calculate the position behind the box (in the direction of push)
+                int nextToTargetX = targetX + dx;
+                int nextToTargetY = targetY + dy;
+                
+                // Check if the position behind the box is valid
+                if (nextToTargetX < 0 || nextToTargetX >= level.width || nextToTargetY < 0 || nextToTargetY >= level.height) {
+                    return;  // Out of bounds
+                }
+                
+                // Get the tile type at the position behind the box
+                TileType nextToTargetTile = level.currentMap[nextToTargetY][nextToTargetX];
+                
+                // Check if box can be pushed
+                if (nextToTargetTile == WALL || nextToTargetTile == BOX || nextToTargetTile == BOX_ON_TARGET) {
+                    return;  // Can't push into walls or other boxes
+                }
+                
+                // Record box movement info
+                moveRecord.wasBoxMoved = true;
+                moveRecord.boxPrevPos = {targetX, targetY};
+                moveRecord.movedBoxPos = {nextToTargetX, nextToTargetY};
+                
+                // Update the position behind the box
+                if (nextToTargetTile == TARGET) {
+                    level.currentMap[nextToTargetY][nextToTargetX] = BOX_ON_TARGET;
+                } else {
+                    level.currentMap[nextToTargetY][nextToTargetX] = BOX;
+                }
+                
+                // Determine what the box was on (to update the tile where the player will move to)
+                bool boxWasOnTarget = (level.originalMap[targetY][targetX] == TARGET);
+                
+                // Update the box's original position (where player will move to)
+                if (boxWasOnTarget) {
+                    level.currentMap[targetY][targetX] = PLAYER_ON_TARGET;
+                } else {
+                    level.currentMap[targetY][targetX] = PLAYER;
+                }
+                
+                // Determine what the player was on (to leave behind)
+                bool playerWasOnTarget = (level.originalMap[game.player.y][game.player.x] == TARGET);
+                
+                // Update the player's original position
+                if (playerWasOnTarget) {
+                    level.currentMap[game.player.y][game.player.x] = TARGET;
+                } else {
+                    level.currentMap[game.player.y][game.player.x] = EMPTY;
+                }
+                
+                // Update player position
+                game.player.x = targetX;
+                game.player.y = targetY;
+                
+                // Record the move
+                recordMove(moveRecord);
+                
+                // Increment both moves and pushes
+                game.player.moves++;
+                game.player.pushes++;
+                
+                // Play push sound effect
+                if (game.settings.sfxEnabled && soundEffects[1]) {
+                    Mix_PlayChannel(-1, soundEffects[1], 0);
+                }
+            }
+        }
+    }
+}
+
+// Check if all boxes are on targets
+bool checkWinCondition(Level* level) {
+    int targetCount = 0;
+    int boxOnTargetCount = 0;
+    
+    // Count all targets and boxes on targets in the level
+    for (int y = 0; y < level->height; y++) {
+        for (int x = 0; x < level->width; x++) {
+            // Count targets in original map (includes empty targets and those under player)
+            if (level->originalMap[y][x] == TARGET) {
+                targetCount++;
+            }
+            
+            // Count boxes that are currently on targets
+            if (level->currentMap[y][x] == BOX_ON_TARGET) {
+                boxOnTargetCount++;
+            }
+        }
+    }
+    
+    // Win condition: number of boxes on targets equals the total number of targets
+    // and there is at least one target in the level
+    return (targetCount > 0 && boxOnTargetCount == targetCount);
+}
+
+// Render text on the screen
+void renderText(SDL_Renderer* renderer, const char* text, int x, int y, TTF_Font* font, SDL_Color textColor) {
+    SDL_Surface* textSurface = TTF_RenderText_Solid(font, text, textColor);
+    if (!textSurface) {
+        std::cout << "Unable to render text surface! SDL_ttf Error: " << TTF_GetError() << std::endl;
+        return;
+    }
+    
+    SDL_Texture* textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
+    if (!textTexture) {
+        std::cout << "Unable to create texture from rendered text! SDL Error: " << SDL_GetError() << std::endl;
+        SDL_FreeSurface(textSurface);
+        return;
+    }
+    
+    SDL_Rect renderQuad = {x, y, textSurface->w, textSurface->h};
+    SDL_RenderCopy(renderer, textTexture, nullptr, &renderQuad);
+    
+    SDL_FreeSurface(textSurface);
+    SDL_DestroyTexture(textTexture);
+}
+
+// Render HUD with game statistics
+void renderHUD(SDL_Renderer* renderer, TTF_Font* font, int levelNum, int moves, int pushes) {
+    int screenWidth = 1280; // Assuming this is the width of your screen
+    SDL_Color textColor = {200, 200, 200, 255}; // Light gray text
+    SDL_Color numberColor = {255, 255, 255, 255}; // White color for numbers
+    
+    // Left-aligned level name
+    std::string levelText = "Sokoban " + std::to_string(levelNum);
+    renderText(renderer, levelText.c_str(), 20, 20, font, textColor);
+    
+    // Right-aligned moves counter - position it away from pushes
+    std::string movesStr = std::to_string(moves);
+    std::string movesLabel = " moves";
+    
+    // Calculate positions to place them properly
+    int pushesWidth = (std::to_string(pushes).length() + 7) * 12; // "X pushes" width
+    int movesTextX = screenWidth - 360 - pushesWidth; // Moved 100 pixels left from original position
+    
+    // Render moves count with bold-like effect for numbers
+    renderText(renderer, movesStr.c_str(), movesTextX, 20, font, numberColor);
+    renderText(renderer, movesLabel.c_str(), movesTextX + movesStr.length() * 14, 20, font, textColor);
+    
+    // Right-aligned pushes counter - position it at the original place
+    std::string pushesStr = std::to_string(pushes);
+    std::string pushesLabel = " pushes";
+    
+    // Render pushes count with bold-like effect for numbers
+    renderText(renderer, pushesStr.c_str(), screenWidth - 200, 20, font, numberColor);
+    renderText(renderer, pushesLabel.c_str(), screenWidth - 200 + pushesStr.length() * 14, 20, font, textColor);
+    
+    // Draw dotted line underneath with better styling
+    SDL_SetRenderDrawColor(renderer, 150, 150, 150, 255); // Gray line color
+    for (int x = 10; x < screenWidth - 10; x += 4) {
+        SDL_RenderDrawPoint(renderer, x, 45);
+    }
+}
+
+// Render menu with highlighted selection
+void renderMenu(SDL_Renderer* renderer, TTF_Font* font) {
+    // Draw menu background
+    if (menuBackgroundTexture) {
+        // Just render the background texture without any color modification
+        SDL_RenderCopy(renderer, menuBackgroundTexture, nullptr, nullptr);
+    }
+
+    // Menu items - updated order to match the enum order
+    const char* menuItems[] = {
+        "Start Game",
+        "Select Level",
+        "Select Skin",    // Swapped position with Settings to match enum order
+        "Settings",       // Swapped position with Select Skin to match enum order
+        "Quit"
+    };
+    
+    const int itemCount = 5;
+    const int startY = 230; // Moved down since we removed the title
+    const int itemSpacing = 60; // Increased spacing between items
+    
+    // Render each menu item
+    for (int i = 0; i < itemCount; i++) {
+        SDL_Color textColor;
+        std::string itemText;
+        
+        // Set text color based on selection (white for regular, dark green for selected)
+        if (i == currentMenuSelection) {
+            textColor = {0, 200, 0, 255}; // Dark green for selected item
+            itemText = "> " + std::string(menuItems[i]) + " <";
+        } else {
+            textColor = {255, 255, 255, 255}; // White for unselected items
+            itemText = menuItems[i];
+        }
+        
+        // Calculate text width for proper centering
+        SDL_Surface* textSurface = TTF_RenderText_Solid(font, itemText.c_str(), textColor);
+        int textWidth = textSurface ? textSurface->w : itemText.length() * 15;
+        if (textSurface) {
+            SDL_FreeSurface(textSurface);
+        }
+        
+        // Calculate X position - moved 275 pixels to the left from center
+        int x = ((1280 - textWidth) / 2) - 275;
+        
+        // Render the menu item
+        renderText(renderer, itemText.c_str(), x, startY + i * itemSpacing, font, textColor);
+    }
+}
+
+// Render level selection screen
+void renderLevelSelect(SDL_Renderer* renderer, TTF_Font* font) {
+    // Draw the level select background
+    if (levelSelectBackgroundTexture) {
+        SDL_RenderCopy(renderer, levelSelectBackgroundTexture, nullptr, nullptr);
+    }
+
+    // Draw semi-transparent background
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer, 46, 96, 95, 170);
+    SDL_Rect backgroundRect = {100, 80, 1080, 560};
+    SDL_RenderFillRect(renderer, &backgroundRect);
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+    
+    // Draw level options
+    SDL_Color textColor = {255, 255, 255, 255}; // White
+    SDL_Color currentLevelColor = {0, 255, 128, 255}; // Bright green for current level
+    SDL_Color completedLevelColor = {135, 206, 250, 255}; // Light blue for completed levels
+    
+    const int startY = 180; // Moved up a bit to fit more rows
+    const int itemSpacing = 70; // Slightly reduced spacing between rows
+    const int itemsPerRow = 4; // Increased from 3 to 4 items per row
+    const int itemWidth = 240; // Reduced width to fit 4 items
+    const int levelsPerPage = 16; // 4x4 grid per page
+    
+    // Create a smaller font for instruction text (50% of original size)
+    TTF_Font* smallFont = TTF_OpenFont("assets/fonts/arial.ttf", 12); // 50% of 24 = 12
+    
+    // Create a font for score display (doubled size from original small font)
+    TTF_Font* scoreFont = TTF_OpenFont("assets/fonts/arial.ttf", 10); // Doubled from 5 to 10
+    
+    // Calculate current page based on selected level
+    int currentPage = currentLevelIndex / levelsPerPage;
+    int startLevel = currentPage * levelsPerPage;
+    int endLevel = std::min(startLevel + levelsPerPage, totalLoadedLevels);
+    
+    // Draw level selection instructions with 50% smaller font, centered
+    std::string instructionsText = "Use arrow keys to navigate and ENTER to select a level";
+    SDL_Surface* instrSurface = TTF_RenderText_Solid(smallFont, instructionsText.c_str(), textColor);
+    int instrWidth = instrSurface ? instrSurface->w : instructionsText.length() * 7;
+    if (instrSurface) {
+        SDL_FreeSurface(instrSurface);
+    }
+    int instrX = (1280 - instrWidth) / 2;
+    renderText(renderer, instructionsText.c_str(), instrX, 140, smallFont, textColor);
+    
+    // Draw page indicator if there are multiple pages, centered
+    if (totalLoadedLevels > levelsPerPage) {
+        std::string pageText = "Page " + std::to_string(currentPage + 1) + 
+                             " of " + std::to_string((totalLoadedLevels + levelsPerPage - 1) / levelsPerPage);
+        SDL_Surface* pageSurface = TTF_RenderText_Solid(font, pageText.c_str(), textColor);
+        int pageTextWidth = pageSurface ? pageSurface->w : pageText.length() * 14;
+        if (pageSurface) {
+            SDL_FreeSurface(pageSurface);
+        }
+        int pageX = (1280 - pageTextWidth) / 2;
+        renderText(renderer, pageText.c_str(), pageX, 550, font, textColor);
+    }
+    
+    // Draw level options for current page
+    for (int i = startLevel; i < endLevel; i++) {
+        int localIndex = i - startLevel;
+        int row = localIndex / itemsPerRow;
+        int col = localIndex % itemsPerRow;
+        
+        int x = 150 + col * itemWidth;
+        int y = startY + row * itemSpacing;
+        
+        // Draw level number box - Changed from blue to dark green
+        if (i == currentLevelIndex) {
+            SDL_SetRenderDrawColor(renderer, 0, 100, 0, 255); // Dark green for highlight color
+        } else {
+            SDL_SetRenderDrawColor(renderer, 0, 70, 0, 255); // Darker green for regular levels
+        }
+        SDL_Rect levelBox = {x - 10, y - 5, 220, 65};
+        SDL_RenderFillRect(renderer, &levelBox);
+        
+        // Level text with number
+        std::string levelText = "Level " + std::to_string(i + 1);
+        
+        // Calculate text width for centering
+        SDL_Surface* textSurface = TTF_RenderText_Solid(font, levelText.c_str(), textColor);
+        int textWidth = textSurface ? textSurface->w : levelText.length() * 15;
+        if (textSurface) {
+            SDL_FreeSurface(textSurface);
+        }
+        
+        // Center the text in the box
+        int centeredX = x + (200 - textWidth) / 2;
+        
+        // Highlight current level
+        if (i == currentLevelIndex) {
+            renderText(renderer, levelText.c_str(), centeredX, y, font, currentLevelColor);
+        } else {
+            renderText(renderer, levelText.c_str(), centeredX, y, font, textColor);
+        }
+        
+        // If we have high scores, show them with doubled size font and centered
+        std::string scoreText;
+        if (i < static_cast<int>(game.highScores.size()) && game.highScores[i].moves < INT_MAX) {
+            scoreText = std::to_string(game.highScores[i].moves) + " moves, " + 
+                       std::to_string(game.highScores[i].pushes) + " pushes";
+        } else {
+            scoreText = "Not completed";
+        }
+        
+        // Calculate score text width for centering
+        SDL_Surface* scoreSurface = TTF_RenderText_Solid(scoreFont, scoreText.c_str(), textColor);
+        int scoreWidth = scoreSurface ? scoreSurface->w : scoreText.length() * 5;
+        if (scoreSurface) {
+            SDL_FreeSurface(scoreSurface);
+        }
+        int centeredScoreX = x + (200 - scoreWidth) / 2;
+        
+        // Render the score text with its color
+        SDL_Color scoreColor = (i < static_cast<int>(game.highScores.size()) && game.highScores[i].moves < INT_MAX) ? 
+                             completedLevelColor : textColor;
+        renderText(renderer, scoreText.c_str(), centeredScoreX, y + 35, scoreFont, scoreColor);
+    }
+    
+    // Draw page navigation instructions if needed with smaller font and centered
+    if (totalLoadedLevels > levelsPerPage) {
+        SDL_Color pageNavColor = {100, 255, 255, 255}; // Cyan
+        std::string pageNavText = "Press PageUp/PageDown to change pages";
+        
+        // Calculate text width for centering
+        SDL_Surface* navSurface = TTF_RenderText_Solid(smallFont, pageNavText.c_str(), pageNavColor);
+        int navWidth = navSurface ? navSurface->w : pageNavText.length() * 7;
+        if (navSurface) {
+            SDL_FreeSurface(navSurface);
+        }
+        int navX = (1280 - navWidth) / 2;
+        
+        renderText(renderer, pageNavText.c_str(), navX, 470, smallFont, pageNavColor);
+    }
+    
+    // Draw navigation instructions with smaller font and centered
+    SDL_Color navColor = {255, 160, 0, 255}; // Orange
+    std::string backText = "Press ESC to return to menu";
+    
+    // Calculate text width for centering
+    SDL_Surface* backSurface = TTF_RenderText_Solid(smallFont, backText.c_str(), navColor);
+    int backWidth = backSurface ? backSurface->w : backText.length() * 7;
+    if (backSurface) {
+        SDL_FreeSurface(backSurface);
+    }
+    int backX = (1280 - backWidth) / 2;
+    
+    renderText(renderer, backText.c_str(), backX, 515, smallFont, navColor);
+    
+    // Clean up the fonts
+    if (smallFont) {
+        TTF_CloseFont(smallFont);
+    }
+    if (scoreFont) {
+        TTF_CloseFont(scoreFont);
+    }
+}
+
+// Render level complete screen
+void renderLevelComplete(SDL_Renderer* renderer, TTF_Font* normalFont, TTF_Font* largeFont, int levelNum, int moves, int pushes) {
+    // Draw semi-transparent overlay to create a dimming effect
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 128); // Semi-transparent black
+    SDL_Rect overlayRect = {0, 0, 1280, 720};
+    SDL_RenderFillRect(renderer, &overlayRect);
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+
+    // Centering helper variables
+    int screenWidth = 1280;
+    int screenHeight = 720;
+
+    // Draw large "EXCELLENT!" message in the center with bright gold color
+    SDL_Color goldColor = {255, 215, 0, 255}; // Gold
+    const char* excellentText = "EXCELLENT!";
+    SDL_Surface* excellentSurface = TTF_RenderText_Solid(largeFont, excellentText, goldColor);
+    SDL_Texture* excellentTexture = SDL_CreateTextureFromSurface(renderer, excellentSurface);
+    SDL_Rect excellentRect = {
+        (screenWidth - excellentSurface->w) / 2, // Center horizontally
+        screenHeight / 4 - excellentSurface->h / 2, // Position near the top
+        excellentSurface->w,
+        excellentSurface->h
+    };
+    SDL_RenderCopy(renderer, excellentTexture, nullptr, &excellentRect);
+    SDL_FreeSurface(excellentSurface);
+    SDL_DestroyTexture(excellentTexture);
+
+    // Draw level completion message
+    SDL_Color whiteColor = {255, 255, 255, 255}; // White
+    std::string levelCompleteText = "Level " + std::to_string(levelNum) + " Complete!";
+    SDL_Surface* levelCompleteSurface = TTF_RenderText_Solid(normalFont, levelCompleteText.c_str(), whiteColor);
+    SDL_Texture* levelCompleteTexture = SDL_CreateTextureFromSurface(renderer, levelCompleteSurface);
+    SDL_Rect levelCompleteRect = {
+        (screenWidth - levelCompleteSurface->w) / 2, // Center horizontally
+        screenHeight / 2 - levelCompleteSurface->h / 2, // Center vertically
+        levelCompleteSurface->w,
+        levelCompleteSurface->h
+    };
+    SDL_RenderCopy(renderer, levelCompleteTexture, nullptr, &levelCompleteRect);
+    SDL_FreeSurface(levelCompleteSurface);
+    SDL_DestroyTexture(levelCompleteTexture);
+
+    // Draw statistics
+    std::string statsText = "Moves: " + std::to_string(moves) + "  Pushes: " + std::to_string(pushes);
+    SDL_Surface* statsSurface = TTF_RenderText_Solid(normalFont, statsText.c_str(), whiteColor);
+    SDL_Texture* statsTexture = SDL_CreateTextureFromSurface(renderer, statsSurface);
+    SDL_Rect statsRect = {
+        (screenWidth - statsSurface->w) / 2, // Center horizontally
+        screenHeight / 2 + 50, // Slightly below the level complete message
+        statsSurface->w,
+        statsSurface->h
+    };
+    SDL_RenderCopy(renderer, statsTexture, nullptr, &statsRect);
+    SDL_FreeSurface(statsSurface);
+    SDL_DestroyTexture(statsTexture);
+
+    // Display high score message if achieved
+    if (game.isNewRecord) {
+        SDL_Color brightGreenColor = {0, 255, 128, 255}; // Bright green
+        const char* newRecordText = "NEW HIGH SCORE!";
+        SDL_Surface* newRecordSurface = TTF_RenderText_Solid(normalFont, newRecordText, brightGreenColor);
+        SDL_Texture* newRecordTexture = SDL_CreateTextureFromSurface(renderer, newRecordSurface);
+        SDL_Rect newRecordRect = {
+            (screenWidth - newRecordSurface->w) / 2, // Center horizontally
+            screenHeight / 2 + 100, // Below the stats
+            newRecordSurface->w,
+            newRecordSurface->h
+        };
+        SDL_RenderCopy(renderer, newRecordTexture, nullptr, &newRecordRect);
+        SDL_FreeSurface(newRecordSurface);
+        SDL_DestroyTexture(newRecordTexture);
+    }
+
+    // Draw instruction
+    SDL_Color yellowColor = {255, 255, 0, 255}; // Yellow
+    const char* continueText = "Press SPACE to Continue";
+    SDL_Surface* continueSurface = TTF_RenderText_Solid(normalFont, continueText, yellowColor);
+    SDL_Texture* continueTexture = SDL_CreateTextureFromSurface(renderer, continueSurface);
+    SDL_Rect continueRect = {
+        (screenWidth - continueSurface->w) / 2, // Center horizontally
+        screenHeight - 100, // Near the bottom
+        continueSurface->w,
+        continueSurface->h
+    };
+    SDL_RenderCopy(renderer, continueTexture, nullptr, &continueRect);
+    SDL_FreeSurface(continueSurface);
+    SDL_DestroyTexture(continueTexture);
+
+    // Play level complete sound effect
+    if (game.settings.sfxEnabled && soundEffects[2]) {
+        Mix_PlayChannel(-1, soundEffects[2], 0);
+    }
+}
+
+// Render game completion screen
+void renderGameComplete(SDL_Renderer* renderer, TTF_Font* normalFont, TTF_Font* largeFont, int moves, int pushes) {
+    // Fill background with a dark blue gradient
+    SDL_SetRenderDrawColor(renderer, 0, 0, 64, 255); // Dark blue
+    SDL_RenderClear(renderer);
+    
+    // Draw congratulations message with bright green color
+    SDL_Color brightGreenColor = {0, 255, 128, 255}; // Bright green
+    renderText(renderer, "CONGRATULATIONS!", 200, 120, largeFont, brightGreenColor);
+    
+    // Draw completion message
+    SDL_Color goldColor = {255, 215, 0, 255}; // Gold
+    renderText(renderer, "YOU COMPLETED ALL LEVELS!", 180, 200, normalFont, goldColor);
+    
+    // Draw total statistics
+    SDL_Color whiteColor = {255, 255, 255, 255}; // White
+    std::string totalStatsText = "Total Moves: " + std::to_string(moves) + "  Total Pushes: " + std::to_string(pushes);
+    renderText(renderer, totalStatsText.c_str(), 250, 300, normalFont, whiteColor);
+    
+    // Draw star decorations
+    SDL_Color starColor = {255, 255, 0, 255}; // Yellow
+    renderText(renderer, "★ ★ ★", 350, 250, largeFont, starColor);
+    
+    // Draw instructions
+    SDL_Color lightBlueColor = {135, 206, 250, 255}; // Light blue
+    renderText(renderer, "Press ESC to return to Menu", 260, 400, normalFont, lightBlueColor);
+    renderText(renderer, "Press Q to Quit", 320, 440, normalFont, lightBlueColor);
+}
+
+// Render settings menu
+void renderSettings(SDL_Renderer* renderer, TTF_Font* font) {
+    // Draw the settings background (reuse level select background for now)
+    if (levelSelectBackgroundTexture) {
+        SDL_RenderCopy(renderer, levelSelectBackgroundTexture, nullptr, nullptr);
+    }
+
+    // Draw semi-transparent background panel
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer, 46, 96, 95, 190);
+    SDL_Rect backgroundRect = {320, 120, 640, 480};
+    SDL_RenderFillRect(renderer, &backgroundRect);
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+    
+    // Draw settings title
+    SDL_Color titleColor = {255, 255, 100, 255}; // Light yellow
+    renderText(renderer, "Game Settings", 520, 140, font, titleColor);
+    
+    // Draw horizontal divider
+    SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
+    SDL_RenderDrawLine(renderer, 350, 180, 930, 180);
+
+    // Settings menu items
+    const char* settingsItems[] = {
+        "Background Music",
+        "Sound Effects",
+        "Back to Main Menu"
+    };
+    
+    // Current values for settings
+    std::string bgmValue = game.settings.bgmEnabled ? "ON" : "OFF";
+    std::string sfxValue = game.settings.sfxEnabled ? "ON" : "OFF";
+    
+    const std::string settingsValues[] = {
+        bgmValue,
+        sfxValue,
+        ""  // Back option has no value
+    };
+    
+    const int startY = 220;
+    const int itemSpacing = 60;
+    
+    // Render each settings item with its current value
+    for (int i = 0; i < SETTINGS_COUNT; i++) {
+        SDL_Color textColor;
+        SDL_Color valueColor = {255, 255, 100, 255}; // Light yellow for values
+        std::string itemText;
+        
+        // Set text color based on selection
+        if (i == currentSettingsSelection) {
+            textColor = {0, 255, 0, 255}; // Green for selected item
+            itemText = "> " + std::string(settingsItems[i]);
+        } else {
+            textColor = {255, 255, 255, 255}; // White for unselected items
+            itemText = settingsItems[i];
+        }
+        
+        // Render the setting name
+        renderText(renderer, itemText.c_str(), 370, startY + i * itemSpacing, font, textColor);
+        
+        // Render the setting value (except for Back option)
+        if (i < SETTINGS_BACK) {
+            renderText(renderer, settingsValues[i].c_str(), 800, startY + i * itemSpacing, font, valueColor);
+        }
+    }
+    
+    // Create smaller font for instructions (20% smaller than original)
+    TTF_Font* smallFont = TTF_OpenFont("assets/fonts/arial.ttf", 15); // 24 * 0.8 = 19
+    
+    // Draw navigation instructions - centered
+    SDL_Color instructionColor = {150, 220, 255, 255}; // Light blue
+    
+    // Split the navigation instructions into two lines
+    std::string navInstructionLine1 = "Use UP/DOWN to navigate";
+    std::string navInstructionLine2 = "LEFT/RIGHT to change settings";
+    
+    // Calculate text width for centering the first line
+    SDL_Surface* instrSurface1 = TTF_RenderText_Solid(smallFont, navInstructionLine1.c_str(), instructionColor);
+    int instrWidth1 = instrSurface1 ? instrSurface1->w : navInstructionLine1.length() * 10;
+    if (instrSurface1) {
+        SDL_FreeSurface(instrSurface1);
+    }
+    
+    // Center the first line horizontally
+    int instrX1 = 320 + (640 - instrWidth1) / 2;
+    
+    // Calculate text width for centering the second line
+    SDL_Surface* instrSurface2 = TTF_RenderText_Solid(smallFont, navInstructionLine2.c_str(), instructionColor);
+    int instrWidth2 = instrSurface2 ? instrSurface2->w : navInstructionLine2.length() * 10;
+    if (instrSurface2) {
+        SDL_FreeSurface(instrSurface2);
+    }
+    
+    // Center the second line horizontally
+    int instrX2 = 320 + (640 - instrWidth2) / 2;
+    
+    // Draw both instruction lines with appropriate spacing
+    renderText(renderer, navInstructionLine1.c_str(), instrX1, 500, smallFont, instructionColor);
+    renderText(renderer, navInstructionLine2.c_str(), instrX2, 530, smallFont, instructionColor);
+    
+    // Clean up the font
+    if (smallFont) {
+        TTF_CloseFont(smallFont);
+    }
+}
+
+// Render player skin selection screen
+void renderSkinSelect(SDL_Renderer* renderer, TTF_Font* font) {
+    // Draw the background (reuse level select background for now)
+    if (levelSelectBackgroundTexture) {
+        SDL_RenderCopy(renderer, levelSelectBackgroundTexture, nullptr, nullptr);
+    }
+    
+    // Draw semi-transparent background panel
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer, 46, 96, 95, 190);
+    SDL_Rect backgroundRect = {320, 120, 640, 480};
+    SDL_RenderFillRect(renderer, &backgroundRect);
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+    
+    // Draw title
+    SDL_Color titleColor = {255, 255, 100, 255}; // Light yellow
+    
+    // Calculate width of title for proper centering
+    std::string titleText = "Select Player Skin";
+    SDL_Surface* titleSurface = TTF_RenderText_Solid(font, titleText.c_str(), titleColor);
+    int titleWidth = titleSurface ? titleSurface->w : titleText.length() * 15;
+    if (titleSurface) {
+        SDL_FreeSurface(titleSurface);
+    }
+    
+    // Center the title text
+    int titleX = 320 + (640 - titleWidth) / 2;
+    renderText(renderer, titleText.c_str(), titleX, 140, font, titleColor);
+    
+    // Draw horizontal divider
+    SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
+    SDL_RenderDrawLine(renderer, 350, 180, 930, 180);
+
+    // Skin options
+    const char* skinNames[] = {
+        "Con meo da den",
+        "Bombardino coccodrillo",
+        "Capybara",
+        "Tralalelo Tralala",
+        "Tung tung tung sahur"
+    };
+    
+    // Only show current skin selection in center
+    int currentSkin = currentSkinSelection;
+    
+    // Ensure currentSkin is within the valid range of actual skins (not including "Back" option)
+    if (currentSkin >= SKIN_COUNT) {
+        currentSkin = 0;
+    }
+    
+    // Define colors
+    SDL_Color normalTextColor = {255, 255, 255, 255}; // White for regular text
+    SDL_Color arrowColor = {0, 255, 0, 255}; // Green for arrows
+    
+    // Calculate center position
+    int centerX = 320 + 640 / 2; // Center of panel
+    int centerY = 280; // Vertical position for skin display
+    
+    // Draw left arrow
+    std::string leftArrow = "<";
+    renderText(renderer, leftArrow.c_str(), centerX - 150, centerY, font, arrowColor);
+    
+    // Draw right arrow
+    std::string rightArrow = ">";
+    renderText(renderer, rightArrow.c_str(), centerX + 120, centerY, font, arrowColor);
+    
+    // Display the current skin image in the center (larger size)
+    SDL_Surface* playerSkinSurface = IMG_Load(playerSkinNames[currentSkin][0]);
+    if (playerSkinSurface) {
+        SDL_Texture* playerSkinTexture = SDL_CreateTextureFromSurface(renderer, playerSkinSurface);
+        SDL_FreeSurface(playerSkinSurface);
+        
+        if (playerSkinTexture) {
+            // Display an enlarged version of the skin
+            SDL_Rect destRect = {centerX - 40, centerY - 40, 80, 80};
+            SDL_RenderCopy(renderer, playerSkinTexture, nullptr, &destRect);
+            SDL_DestroyTexture(playerSkinTexture);
+        }
+    }
+    
+    // Display skin name below the image
+    std::string skinName = skinNames[currentSkin];
+    
+    // Calculate text width for centering
+    SDL_Surface* nameSurface = TTF_RenderText_Solid(font, skinName.c_str(), normalTextColor);
+    int nameWidth = nameSurface ? nameSurface->w : skinName.length() * 15;
+    if (nameSurface) {
+        SDL_FreeSurface(nameSurface);
+    }
+    
+    // Center the name under the skin image
+    int nameX = centerX - nameWidth / 2;
+    renderText(renderer, skinName.c_str(), nameX, centerY + 100, font, normalTextColor);
+    
+    // Add "Back to Main Menu" option
+    SDL_Color backColor = currentSkinSelection == SKIN_COUNT ? 
+                         SDL_Color{0, 255, 0, 255} : SDL_Color{255, 255, 255, 255};
+    std::string backText = currentSkinSelection == SKIN_COUNT ? 
+                         "> Back to Main Menu <" : "Back to Main Menu";
+                         
+    // Calculate text width for centering
+    SDL_Surface* backSurface = TTF_RenderText_Solid(font, backText.c_str(), backColor);
+    int backWidth = backSurface ? backSurface->w : backText.length() * 15;
+    if (backSurface) {
+        SDL_FreeSurface(backSurface);
+    }
+    
+    // Center the back text at the bottom of the panel
+    int backX = 320 + (640 - backWidth) / 2;
+    renderText(renderer, backText.c_str(), backX, 450, font, backColor);
+    
+    // Create smaller font for instructions (30% smaller than original)
+    TTF_Font* smallFont = TTF_OpenFont("assets/fonts/arial.ttf", 15); // 24 * 0.7 = 16.8 ≈ 17
+    
+    // Draw navigation instructions - centered
+    SDL_Color instructionColor = {150, 220, 255, 255}; // Light blue
+    
+    // Split the navigation instructions into two lines with LEFT/RIGHT instead of UP/DOWN
+    std::string navInstructionLine1 = "Use LEFT/RIGHT to navigate";
+    std::string navInstructionLine2 = "UP/DOWN for Back option, ENTER to select";
+    
+    // Calculate text width for centering the first line
+    SDL_Surface* instrSurface1 = TTF_RenderText_Solid(smallFont, navInstructionLine1.c_str(), instructionColor);
+    int instrWidth1 = instrSurface1 ? instrSurface1->w : navInstructionLine1.length() * 10;
+    if (instrSurface1) {
+        SDL_FreeSurface(instrSurface1);
+    }
+    
+    // Center the first line horizontally
+    int instrX1 = 320 + (640 - instrWidth1) / 2;
+    
+    // Calculate text width for centering the second line
+    SDL_Surface* instrSurface2 = TTF_RenderText_Solid(smallFont, navInstructionLine2.c_str(), instructionColor);
+    int instrWidth2 = instrSurface2 ? instrSurface2->w : navInstructionLine2.length() * 10;
+    if (instrSurface2) {
+        SDL_FreeSurface(instrSurface2);
+    }
+    
+    // Center the second line horizontally
+    int instrX2 = 320 + (640 - instrWidth2) / 2;
+    
+    // Draw both instruction lines with appropriate spacing
+    renderText(renderer, navInstructionLine1.c_str(), instrX1, 500, smallFont, instructionColor);
+    renderText(renderer, navInstructionLine2.c_str(), instrX2, 530, smallFont, instructionColor);
+    
+    // Clean up the font
+    if (smallFont) {
+        TTF_CloseFont(smallFont);
+    }
+}
+
+// Initialize menu background
+bool initMenuBackground(SDL_Renderer* renderer) {
+    // Load menu background
+    SDL_Surface* menuBackgroundSurface = IMG_Load("assets/images/menu/menu_background.png");
+    if (menuBackgroundSurface) {
+        menuBackgroundTexture = SDL_CreateTextureFromSurface(renderer, menuBackgroundSurface);
+        SDL_FreeSurface(menuBackgroundSurface);
+        if (!menuBackgroundTexture) {
+            std::cerr << "Failed to create menu background texture" << std::endl;
+            return false;
+        }
+    }
+
+    // Load level select background
+    SDL_Surface* levelSelectBackgroundSurface = IMG_Load("assets/images/menu/level_background.png");
+    if (levelSelectBackgroundSurface) {
+        levelSelectBackgroundTexture = SDL_CreateTextureFromSurface(renderer, levelSelectBackgroundSurface);
+        SDL_FreeSurface(levelSelectBackgroundSurface);
+        if (!levelSelectBackgroundTexture) {
+            std::cerr << "Failed to create level select background texture" << std::endl;
+            return false;
+        }
+    }
+      // Load game level background
+    // First try to load a dedicated game background
+    SDL_Surface* gameLevelBackgroundSurface = IMG_Load("assets/images/menu/game_background.png");
+    
+    // If the dedicated background doesn't exist, fall back to the level select background
+    if (!gameLevelBackgroundSurface) {
+        gameLevelBackgroundSurface = IMG_Load("assets/images/menu/level_background.png");
+        std::cout << "Game level background image not found, using level background instead." << std::endl;
+    }
+    
+    if (gameLevelBackgroundSurface) {
+        gameLevelBackgroundTexture = SDL_CreateTextureFromSurface(renderer, gameLevelBackgroundSurface);
+        SDL_FreeSurface(gameLevelBackgroundSurface);
+        if (!gameLevelBackgroundTexture) {
+            std::cerr << "Failed to create game level background texture" << std::endl;
+            return false;
+        }
+    }
+
+    return true;
+}
+
+// Clean up menu resources
+void cleanupMenuResources() {
+    if (menuBackgroundTexture) {
+        SDL_DestroyTexture(menuBackgroundTexture);
+        menuBackgroundTexture = nullptr;
+    }
+
+    if (levelSelectBackgroundTexture) {
+        SDL_DestroyTexture(levelSelectBackgroundTexture);
+        levelSelectBackgroundTexture = nullptr;
+    }
+    
+    if (gameLevelBackgroundTexture) {
+        SDL_DestroyTexture(gameLevelBackgroundTexture);
+        gameLevelBackgroundTexture = nullptr;
+    }
 }
