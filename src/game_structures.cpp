@@ -73,16 +73,27 @@ bool loadLevelFromFile(const char* filename, Level* outLevel) {
     if (!file.is_open()) {
         return false; // Failed to open file
     }
-    
-    // Read all lines from file to determine dimensions
+      // Read all lines from file to determine dimensions
     std::vector<std::string> lines;
     std::string line;
     int maxWidth = 0;
     
     while (std::getline(file, line)) {
+        if (line.empty() || line[0] == '/') {  // Skip empty lines or comment lines
+            continue;
+        }
         lines.push_back(line);
-        if (static_cast<int>(line.length()) > maxWidth) {
-            maxWidth = line.length();
+        
+        // Count non-space characters to determine actual width
+        int actualChars = 0;
+        for (char c : line) {
+            if (c != ' ') {
+                actualChars++;
+            }
+        }
+        
+        if (actualChars > maxWidth) {
+            maxWidth = actualChars;
         }
     }
     
@@ -127,48 +138,60 @@ bool loadLevelFromFile(const char* filename, Level* outLevel) {
             outLevel->originalMap[y][x] = WALL; // Default to wall for empty areas
             outLevel->currentMap[y][x] = WALL;
         }
-    }
-    
-    // Parse the file content
+    }    // Parse the file content
     for (int y = 0; y < height; y++) {
+        int mapX = 0; // Track the actual map position
         for (int x = 0; x < static_cast<int>(lines[y].length()); x++) {
             char c = lines[y][x];
             
+            // Skip spaces (used for formatting)
+            if (c == ' ') {
+                continue;
+            }
+            
             switch (c) {
-                case '#': // Wall
-                    outLevel->originalMap[y][x] = WALL;
+                case '+': // Wall
+                    outLevel->originalMap[y][mapX] = WALL;
+                    mapX++;
                     break;
                     
-                case ' ': // Empty floor
-                    outLevel->originalMap[y][x] = EMPTY;
+                case '-': // Empty floor
+                    outLevel->originalMap[y][mapX] = EMPTY;
+                    mapX++;
                     break;
                     
-                case '@': // Player
-                    outLevel->originalMap[y][x] = EMPTY; // The tile underneath is empty
-                    outLevel->playerStartX = x;
+                case '*': // Player
+                    outLevel->originalMap[y][mapX] = EMPTY; // The tile underneath is empty
+                    outLevel->playerStartX = mapX;
                     outLevel->playerStartY = y;
+                    mapX++;
                     break;
                     
-                case '$': // Box
-                    outLevel->originalMap[y][x] = BOX;
+                case '@': // Box
+                    outLevel->originalMap[y][mapX] = BOX;
+                    mapX++;
                     break;
                     
-                case '.': // Target
-                    outLevel->originalMap[y][x] = TARGET;
+                case 'X': // Target
+                    outLevel->originalMap[y][mapX] = TARGET;
+                    mapX++;
                     break;
                     
-                case '*': // Box on target (for compatibility with standard Sokoban format)
-                    outLevel->originalMap[y][x] = BOX_ON_TARGET;
+                case '$': // Box on target
+                    outLevel->originalMap[y][mapX] = BOX_ON_TARGET;
+                    mapX++;
                     break;
                     
-                case '+': // Player on target (for compatibility with standard Sokoban format)
-                    outLevel->originalMap[y][x] = TARGET; // The tile underneath is a target
-                    outLevel->playerStartX = x;
+                case '%': // Player on target
+                    outLevel->originalMap[y][mapX] = TARGET; // The tile underneath is a target
+                    outLevel->playerStartX = mapX;
                     outLevel->playerStartY = y;
+                    mapX++;
                     break;
                     
                 default: // Treat any other character as wall to prevent access
-                    outLevel->originalMap[y][x] = WALL;
+                    outLevel->originalMap[y][mapX] = WALL;
+                    mapX++;
                     break;
             }
         }

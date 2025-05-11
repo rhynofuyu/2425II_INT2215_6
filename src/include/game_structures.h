@@ -8,13 +8,13 @@
 
 // Define tile types for the Sokoban game
 enum TileType {
-    EMPTY,              // Empty space
-    WALL,               // Wall - cannot pass through
-    PLAYER,             // Player position
-    BOX,                // Box/crate that can be pushed
-    TARGET,             // Target position for boxes
-    BOX_ON_TARGET,      // Box placed on a target
-    PLAYER_ON_TARGET    // Player standing on a target
+    EMPTY,              // Empty space (-)
+    WALL,               // Wall - cannot pass through (+)
+    PLAYER,             // Player position (*)
+    BOX,                // Box/crate that can be pushed (@)
+    TARGET,             // Target position for boxes (X)
+    BOX_ON_TARGET,      // Box placed on a target ($)
+    PLAYER_ON_TARGET    // Player standing on a target (%)
 };
 
 // Menu options enum
