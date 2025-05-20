@@ -13,10 +13,12 @@
 #include <random>
 #include <fstream>
 #include <dirent.h> // Add this for directory operations
+#include <thread>   // Add this for solver thread
 
 // Include our game structures
 #include "src/include/game_structures.h"
 #include "src/include/texture_manager.h"
+#include "src/include/solver.h"  // Add solver include
 
 // Forward declarations (function prototypes)
 void initGame();
@@ -33,6 +35,7 @@ bool checkWinCondition(Level* level);
 void cleanupMenuResources();
 void renderText(SDL_Renderer* renderer, const char* text, int x, int y, TTF_Font* font, SDL_Color textColor);
 void scanLevelsDirectory(const std::string& levelDirPath); // Add new function prototype
+void renderSolverStatus(SDL_Renderer* renderer, TTF_Font* font); // Add solver status renderer
 
 // Global constants
 const int TILE_SIZE = 40;  // Size of each tile in pixels
@@ -45,6 +48,19 @@ int currentSkinSelection = SKIN_DEFAULT;
 // Level complete animation variables
 Uint32 levelCompleteTime = 0;
 bool showLevelCompleteAnim = false;
+
+// Solver variables
+bool solverActive = false;
+bool solverRunning = false;
+bool solverFoundSolution = false;
+std::vector<char> solverSolution;
+size_t currentSolutionStep = 0;
+Uint32 lastSolutionStepTime = 0;
+const Uint32 SOLUTION_STEP_DELAY = 300; // 300ms between automated moves
+bool showSolverStats = false;           // Flag to toggle solver statistics display
+extern int solverNodesExplored;         // Defined in solver.cpp
+extern int solverMaxQueueSize;          // Defined in solver.cpp
+extern int solverExecutionTimeMs;       // Defined in solver.cpp
 
 // Global window reference for use in other functions
 SDL_Window* window = nullptr;
@@ -239,7 +255,11 @@ int main(int argc, char* argv[]) {
             renderLevel(renderer, game.activeLevel, game.player, gameTextures);
             
             // Render HUD
-            renderHUD(renderer, font, currentLevelIndex + 1, game.player.moves, game.player.pushes);} else if (game.currentState == LEVEL_COMPLETE) {
+            renderHUD(renderer, font, currentLevelIndex + 1, game.player.moves, game.player.pushes);
+            
+            // Render solver status
+            renderSolverStatus(renderer, font);
+        } else if (game.currentState == LEVEL_COMPLETE) {
             // First draw the game level background
             if (gameLevelBackgroundTexture) {
                 SDL_RenderCopy(renderer, gameLevelBackgroundTexture, nullptr, nullptr);
@@ -279,6 +299,14 @@ int main(int argc, char* argv[]) {
             if (game.isNewRecord) {
                 saveHighScores("highscores.dat");
             }
+            
+            // Reset solver when level is completed
+            solverActive = false;
+            solverRunning = false;
+            solverFoundSolution = false;
+            solverSolution.clear();
+            currentSolutionStep = 0;
+            showSolverStats = false;
             
             // Change game state to level complete
             game.currentState = LEVEL_COMPLETE;
@@ -387,7 +415,7 @@ void handleInput(SDL_Event& event) {
                     // Set flag to exit game in main loop
                     SDL_Event quitEvent;
                     quitEvent.type = SDL_QUIT;
-                    SDL_PushEvent(&quitEvent);
+                    SDL_PushEvent(&quitEvent); // Fix: Pass the address of the quitEvent
                 }
                 break;
             default:
@@ -636,7 +664,7 @@ void handleInput(SDL_Event& event) {
                 // Quit the game
                 SDL_Event quitEvent;
                 quitEvent.type = SDL_QUIT;
-                SDL_PushEvent(&quitEvent);
+                SDL_PushEvent(&quitEvent); // Fix: Pass the address of the quitEvent
                 break;
         }
         return;
@@ -693,6 +721,59 @@ void handleInput(SDL_Event& event) {
             case SDLK_ESCAPE:  // Return to menu
                 game.currentState = MENU;
                 return;
+            case SDLK_s:  // Start solver
+                if (!solverRunning) {
+                    solverRunning = true;
+                    solverActive = true;
+                    solverFoundSolution = false;
+                    solverSolution.clear();
+                    currentSolutionStep = 0;
+                    showSolverStats = true; // Show solver stats when solving
+
+                    Uint32 startTime = SDL_GetTicks();
+                    solverFoundSolution = solveLevel(game.activeLevel, solverSolution, solverNodesExplored, solverMaxQueueSize);
+                    solverExecutionTimeMs = SDL_GetTicks() - startTime;
+                    solverRunning = false;
+                }
+                return;
+            case SDLK_a:  // Abort solver
+                if (solverRunning) {
+                    solverRunning = false;
+                    solverActive = false;
+                    solverSolution.clear();
+                    currentSolutionStep = 0;
+                }
+                return;
+            case SDLK_F1:  // Solve the current level
+                if (!solverActive) {
+                    solverActive = true;
+                    solverRunning = true;
+                    solverFoundSolution = false;
+                    solverSolution.clear();
+                    currentSolutionStep = 0;
+                    showSolverStats = true; // Show solver stats when solving
+                    
+                    Uint32 startTime = SDL_GetTicks();
+                    solverSolution = solveSokoban(game.activeLevel, game.player.x, game.player.y, solverNodesExplored, solverMaxQueueSize);
+                    solverExecutionTimeMs = SDL_GetTicks() - startTime;
+                    solverRunning = false;
+                    solverFoundSolution = !solverSolution.empty();
+                }
+                return;
+
+            case SDLK_F3:  // Reset solver
+                solverActive = false;
+                solverRunning = false;
+                solverFoundSolution = false;
+                solverSolution.clear();
+                currentSolutionStep = 0;
+                showSolverStats = false; // Hide solver stats
+                return;
+                
+            case SDLK_i: // Toggle solver info display
+                showSolverStats = !showSolverStats;
+                return;
+                
             default:
                 return;  // Ignore other keys
         }
@@ -905,6 +986,131 @@ void renderHUD(SDL_Renderer* renderer, TTF_Font* font, int levelNum, int moves, 
     for (int x = 10; x < screenWidth - 10; x += 4) {
         SDL_RenderDrawPoint(renderer, x, 45);
     }
+}
+
+// Render solver status
+void renderSolverStatus(SDL_Renderer* renderer, TTF_Font* font) {
+    if (!solverActive && !showSolverStats) return; // Don't render if solver isn't active and stats aren't shown
+    
+    SDL_Color textColor = {255, 255, 255, 255}; // White
+    SDL_Color activeColor = {0, 255, 0, 255}; // Green
+    SDL_Color errorColor = {255, 0, 0, 255}; // Red
+    SDL_Color infoColor = {135, 206, 250, 255}; // Light blue
+
+    // Create smaller font (50% of original size)
+    TTF_Font* smallFont = TTF_OpenFont("assets/fonts/arial.ttf", 12); // Assuming original font is 24px
+    if (!smallFont) {
+        std::cout << "Failed to load small font for solver stats" << std::endl;
+        return;
+    }
+    
+    // Calculate how many lines of text we'll have to size the background properly
+    int lineCount = 1; // Start with 1 for "Solver" title
+    if (solverRunning) lineCount++;
+    else if (solverActive) {
+        lineCount++; // For solution found or failed message
+        if (solverFoundSolution && solverSolution.size() > 0) lineCount++; // For progress
+    }
+    
+    if (showSolverStats) {
+        if (solverNodesExplored > 0) lineCount++;
+        if (solverMaxQueueSize > 0) lineCount++;
+        if (solverExecutionTimeMs > 0) lineCount++;
+        lineCount++; // For help text
+    }
+    
+    // Add semi-transparent background panel - sized for smaller text
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 180); // Semi-transparent black
+    
+    // Calculate panel size based on content and smaller font
+    int panelWidth = 550; // Increased from 300 to 550 (added 250 pixels)
+    int panelHeight = lineCount * 13 + 15; // Height based on line count + padding
+    SDL_Rect solverInfoRect = {10, 50, panelWidth, panelHeight};
+    SDL_RenderFillRect(renderer, &solverInfoRect);
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+
+    int yPos = 60;
+    std::string solverText;
+
+    renderText(renderer, "Solver", 20, yPos, smallFont, infoColor);
+    yPos += 13; // Reduced spacing for smaller font
+
+    if (solverRunning) {
+        solverText = "Solver is running...";
+        renderText(renderer, solverText.c_str(), 20, yPos, smallFont, activeColor);
+        yPos += 13;
+    } else if (solverActive) {
+        if (solverFoundSolution) {
+            solverText = "Solution found! " + std::to_string(solverSolution.size()) + " moves";
+            renderText(renderer, solverText.c_str(), 20, yPos, smallFont, activeColor);
+            yPos += 13;
+            
+            // Execute solution steps
+            Uint32 currentTime = SDL_GetTicks();
+            if (currentSolutionStep < solverSolution.size() && currentTime - lastSolutionStepTime >= SOLUTION_STEP_DELAY) {
+                char move = solverSolution[currentSolutionStep];
+                SDL_Event moveEvent;
+                moveEvent.type = SDL_KEYDOWN;
+                moveEvent.key.keysym.scancode = SDL_SCANCODE_UNKNOWN;
+                moveEvent.key.keysym.mod = KMOD_NONE;
+                moveEvent.key.repeat = 0;
+
+                switch (move) {
+                    case 'U': moveEvent.key.keysym.sym = SDLK_UP; break;
+                    case 'D': moveEvent.key.keysym.sym = SDLK_DOWN; break;
+                    case 'L': moveEvent.key.keysym.sym = SDLK_LEFT; break;
+                    case 'R': moveEvent.key.keysym.sym = SDLK_RIGHT; break;
+                }
+
+                SDL_PushEvent(&moveEvent); // Fix: Pass the address of the moveEvent
+                currentSolutionStep++;
+                lastSolutionStepTime = currentTime;
+            }
+            
+            // Display progress
+            if (solverSolution.size() > 0) {
+                std::string progressText = "Progress: " + std::to_string(currentSolutionStep) + 
+                                        " / " + std::to_string(solverSolution.size());
+                renderText(renderer, progressText.c_str(), 20, yPos, smallFont, textColor);
+                yPos += 13;
+            }
+        } else {
+            solverText = "Solver failed to find a solution.";
+            renderText(renderer, solverText.c_str(), 20, yPos, smallFont, errorColor);
+            yPos += 13;
+        }
+    }
+
+    // Show advanced statistics if available and requested
+    if (showSolverStats) {
+        if (solverNodesExplored > 0) {
+            std::string nodesText = "Nodes explored: " + std::to_string(solverNodesExplored);
+            renderText(renderer, nodesText.c_str(), 20, yPos, smallFont, textColor);
+            yPos += 13;
+        }
+        
+        if (solverMaxQueueSize > 0) {
+            std::string queueText = "Max queue size: " + std::to_string(solverMaxQueueSize);
+            renderText(renderer, queueText.c_str(), 20, yPos, smallFont, textColor);
+            yPos += 13;
+        }
+        
+        if (solverExecutionTimeMs > 0) {
+            std::string timeText = "Execution time: " + std::to_string(solverExecutionTimeMs) + " ms";
+            renderText(renderer, timeText.c_str(), 20, yPos, smallFont, textColor);
+            yPos += 13;
+        }
+    }
+    
+    // Display help text with smaller font
+    if (showSolverStats) {
+        std::string helpText = "F1: Solve  F3: Reset  I: Toggle Info";
+        renderText(renderer, helpText.c_str(), 20, yPos, smallFont, infoColor);
+    }
+    
+    // Clean up the small font
+    TTF_CloseFont(smallFont);
 }
 
 // Render menu with highlighted selection
@@ -1520,7 +1726,8 @@ bool initMenuBackground(SDL_Renderer* renderer) {
             return false;
         }
     }
-      // Load game level background
+    
+    // Load game level background
     // First try to load a dedicated game background
     SDL_Surface* gameLevelBackgroundSurface = IMG_Load("assets/images/menu/game_background.png");
     

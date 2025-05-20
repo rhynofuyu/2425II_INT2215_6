@@ -9,7 +9,7 @@ INCLUDES = -I./src/include
 LIBS = -L./src/lib -lmingw32 -lSDL2main -lSDL2 -lSDL2_image -lSDL2_ttf -lSDL2_mixer
 
 # Source and output files
-SRC = main.cpp src/game_structures.cpp src/texture_manager.cpp
+SRC = main.cpp src/game_structures.cpp src/texture_manager.cpp src/solver.cpp
 OUTPUT = main.exe
 
 # Build rule
