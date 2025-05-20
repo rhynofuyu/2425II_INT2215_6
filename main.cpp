@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <random>
 #include <fstream>
+#include <dirent.h> // Add this for directory operations
 
 // Include our game structures
 #include "src/include/game_structures.h"
@@ -31,6 +32,7 @@ void renderSkinSelect(SDL_Renderer* renderer, TTF_Font* font);
 bool checkWinCondition(Level* level);
 void cleanupMenuResources();
 void renderText(SDL_Renderer* renderer, const char* text, int x, int y, TTF_Font* font, SDL_Color textColor);
+void scanLevelsDirectory(const std::string& levelDirPath); // Add new function prototype
 
 // Global constants
 const int TILE_SIZE = 40;  // Size of each tile in pixels
@@ -64,6 +66,11 @@ const char* playerSkinNames[SKIN_COUNT][2] = {
     {"assets/images/players/alt3/player.png", "assets/images/players/alt3/player_on_target.png"},
     {"assets/images/players/alt4/player.png", "assets/images/players/alt4/player_on_target.png"}
 };
+
+// Add the dynamic level files vector but use extern for the variables already defined in game_structures.cpp
+std::vector<std::string> dynamicLevelFiles;
+extern int totalLoadedLevels; // Changed to extern to avoid multiple definition
+extern int currentLevelIndex; // Changed to extern to avoid multiple definition
 
 int main(int argc, char* argv[]) {
     // Initialize SDL
@@ -309,9 +316,17 @@ void initGame() {
     // Initialize game state
     game.currentState = MENU;
     
+    // Scan for level files
+    scanLevelsDirectory("levels");
+    
     // Load the current level from file to prepare it
-    if (!loadLevelFromFile(levelFileNames[currentLevelIndex].c_str(), &game.activeLevel)) {
-        std::cerr << "Error: Failed to load level from " << levelFileNames[currentLevelIndex] << std::endl;
+    if (totalLoadedLevels > 0) {
+        if (!loadLevelFromFile(dynamicLevelFiles[currentLevelIndex].c_str(), &game.activeLevel)) {
+            std::cerr << "Error: Failed to load level from " << dynamicLevelFiles[currentLevelIndex] << std::endl;
+            exit(-1);
+        }
+    } else {
+        std::cerr << "No level files found in 'levels' directory" << std::endl;
         exit(-1);
     }
     
@@ -345,8 +360,8 @@ void handleInput(SDL_Event& event) {
                 if (currentMenuSelection == MENU_START_GAME) {
                     // Start the game with the first level
                     currentLevelIndex = 0;
-                    if (!loadLevelFromFile(levelFileNames[currentLevelIndex].c_str(), &game.activeLevel)) {
-                        std::cerr << "Error: Failed to load level from " << levelFileNames[currentLevelIndex] << std::endl;
+                    if (!loadLevelFromFile(dynamicLevelFiles[currentLevelIndex].c_str(), &game.activeLevel)) {
+                        std::cerr << "Error: Failed to load level from " << dynamicLevelFiles[currentLevelIndex] << std::endl;
                         exit(-1);
                     }
                     // Clear move history
@@ -450,8 +465,8 @@ void handleInput(SDL_Event& event) {
             case SDLK_SPACE:
                 // Select the current level
                 // Load the selected level
-                if (!loadLevelFromFile(levelFileNames[currentLevelIndex].c_str(), &game.activeLevel)) {
-                    std::cerr << "Error: Failed to load level from " << levelFileNames[currentLevelIndex] << std::endl;
+                if (!loadLevelFromFile(dynamicLevelFiles[currentLevelIndex].c_str(), &game.activeLevel)) {
+                    std::cerr << "Error: Failed to load level from " << dynamicLevelFiles[currentLevelIndex] << std::endl;
                     exit(-1);
                 }
                 
@@ -588,8 +603,8 @@ void handleInput(SDL_Event& event) {
             // Check if there are more levels to play
             if (currentLevelIndex < totalLoadedLevels) {
                 // Load the next level
-                if (!loadLevelFromFile(levelFileNames[currentLevelIndex].c_str(), &game.activeLevel)) {
-                    std::cerr << "Error: Failed to load level from " << levelFileNames[currentLevelIndex] << std::endl;
+                if (!loadLevelFromFile(dynamicLevelFiles[currentLevelIndex].c_str(), &game.activeLevel)) {
+                    std::cerr << "Error: Failed to load level from " << dynamicLevelFiles[currentLevelIndex] << std::endl;
                     exit(-1);
                 }
                 
@@ -656,8 +671,8 @@ void handleInput(SDL_Event& event) {
                     currentLevelIndex++;
                     game.moveHistory.clear(); // Clear move history
                     game.isNewRecord = false;
-                    if (!loadLevelFromFile(levelFileNames[currentLevelIndex].c_str(), &game.activeLevel)) {
-                        std::cerr << "Error: Failed to load level from " << levelFileNames[currentLevelIndex] << std::endl;
+                    if (!loadLevelFromFile(dynamicLevelFiles[currentLevelIndex].c_str(), &game.activeLevel)) {
+                        std::cerr << "Error: Failed to load level from " << dynamicLevelFiles[currentLevelIndex] << std::endl;
                         exit(-1);
                     }
                     initializeLevel(&game.activeLevel, &game.player, game.activeLevel.playerStartX, game.activeLevel.playerStartY);
@@ -668,8 +683,8 @@ void handleInput(SDL_Event& event) {
                     currentLevelIndex--;
                     game.moveHistory.clear(); // Clear move history
                     game.isNewRecord = false;
-                    if (!loadLevelFromFile(levelFileNames[currentLevelIndex].c_str(), &game.activeLevel)) {
-                        std::cerr << "Error: Failed to load level from " << levelFileNames[currentLevelIndex] << std::endl;
+                    if (!loadLevelFromFile(dynamicLevelFiles[currentLevelIndex].c_str(), &game.activeLevel)) {
+                        std::cerr << "Error: Failed to load level from " << dynamicLevelFiles[currentLevelIndex] << std::endl;
                         exit(-1);
                     }
                     initializeLevel(&game.activeLevel, &game.player, game.activeLevel.playerStartX, game.activeLevel.playerStartY);
@@ -1543,4 +1558,41 @@ void cleanupMenuResources() {
         SDL_DestroyTexture(gameLevelBackgroundTexture);
         gameLevelBackgroundTexture = nullptr;
     }
+}
+
+// Modified function to scan levels directory
+void scanLevelsDirectory(const std::string& levelDirPath) {
+    // Clear existing level file names
+    dynamicLevelFiles.clear();
+    totalLoadedLevels = 0;
+    
+    DIR* dir = opendir(levelDirPath.c_str());
+    if (dir == nullptr) {
+        std::cerr << "Error opening levels directory: " << levelDirPath << std::endl;
+        return;
+    }
+    
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        std::string filename = entry->d_name;
+        
+        // Skip . and .. directories
+        if (filename == "." || filename == "..") {
+            continue;
+        }
+        
+        // Check if file has .txt extension
+        if (filename.size() > 4 && filename.substr(filename.size() - 4) == ".txt") {
+            // Add to level file names
+            dynamicLevelFiles.push_back(levelDirPath + "/" + filename);
+            totalLoadedLevels++;
+        }
+    }
+    
+    closedir(dir);
+    
+    // Sort level file names to ensure they are in order
+    std::sort(dynamicLevelFiles.begin(), dynamicLevelFiles.end());
+    
+    std::cout << "Loaded " << totalLoadedLevels << " levels from " << levelDirPath << std::endl;
 }
