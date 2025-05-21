@@ -80,7 +80,10 @@ const char* playerSkinNames[SKIN_COUNT][2] = {
     {"assets/images/players/alt1/player.png", "assets/images/players/alt1/player_on_target.png"},
     {"assets/images/players/alt2/player.png", "assets/images/players/alt2/player_on_target.png"},
     {"assets/images/players/alt3/player.png", "assets/images/players/alt3/player_on_target.png"},
-    {"assets/images/players/alt4/player.png", "assets/images/players/alt4/player_on_target.png"}
+    {"assets/images/players/alt4/player.png", "assets/images/players/alt4/player_on_target.png"},
+    {"assets/images/players/alt5/player.png", "assets/images/players/alt5/player_on_target.png"},  // Kera Candy
+    {"assets/images/players/alt6/player.png", "assets/images/players/alt6/player_on_target.png"},  // Win Sweet
+    {"assets/images/players/alt7/player.png", "assets/images/players/alt7/player_on_target.png"}   // When Event
 };
 
 // Add the dynamic level files vector but use extern for the variables already defined in game_structures.cpp
@@ -1419,31 +1422,74 @@ void renderLevelComplete(SDL_Renderer* renderer, TTF_Font* normalFont, TTF_Font*
 
 // Render game completion screen
 void renderGameComplete(SDL_Renderer* renderer, TTF_Font* normalFont, TTF_Font* largeFont, int moves, int pushes) {
-    // Fill background with a dark blue gradient
-    SDL_SetRenderDrawColor(renderer, 0, 0, 64, 255); // Dark blue
-    SDL_RenderClear(renderer);
+    // Use the done background image
+    SDL_Surface* doneBackgroundSurface = IMG_Load("assets/images/menu/done_background.png");
+    if (doneBackgroundSurface) {
+        SDL_Texture* doneBackgroundTexture = SDL_CreateTextureFromSurface(renderer, doneBackgroundSurface);
+        SDL_FreeSurface(doneBackgroundSurface);
+        
+        if (doneBackgroundTexture) {
+            // Draw the background
+            SDL_RenderCopy(renderer, doneBackgroundTexture, nullptr, nullptr);
+            SDL_DestroyTexture(doneBackgroundTexture);
+        } else {
+            // Fallback if texture creation failed
+            SDL_SetRenderDrawColor(renderer, 0, 0, 64, 255);
+            SDL_RenderClear(renderer);
+        }
+    } else {
+        // Fallback if image loading failed
+        SDL_SetRenderDrawColor(renderer, 0, 0, 64, 255);
+        SDL_RenderClear(renderer);
+    }
     
-    // Draw congratulations message with bright green color
+    const int screenWidth = 1280; // Screen width
+      // Draw congratulations message with bright green color (centered)
     SDL_Color brightGreenColor = {0, 255, 128, 255}; // Bright green
-    renderText(renderer, "CONGRATULATIONS!", 200, 120, largeFont, brightGreenColor);
     
-    // Draw completion message
-    SDL_Color goldColor = {255, 215, 0, 255}; // Gold
-    renderText(renderer, "YOU COMPLETED ALL LEVELS!", 180, 200, normalFont, goldColor);
+    // Calculate text width for centering
+    SDL_Surface* congratsSurface = TTF_RenderText_Solid(largeFont, "CONGRATULATIONS!", brightGreenColor);
+    if (congratsSurface) {
+        int congratsWidth = congratsSurface->w;
+        int congratsX = (screenWidth - congratsWidth) / 2;
+        SDL_FreeSurface(congratsSurface);
+        
+        renderText(renderer, "CONGRATULATIONS!", congratsX, 120, largeFont, brightGreenColor);
+    }
     
-    // Draw total statistics
-    SDL_Color whiteColor = {255, 255, 255, 255}; // White
-    std::string totalStatsText = "Total Moves: " + std::to_string(moves) + "  Total Pushes: " + std::to_string(pushes);
-    renderText(renderer, totalStatsText.c_str(), 250, 300, normalFont, whiteColor);
+    // Removed star decorations as requested
     
-    // Draw star decorations
-    SDL_Color starColor = {255, 255, 0, 255}; // Yellow
-    renderText(renderer, "★ ★ ★", 350, 250, largeFont, starColor);
-    
-    // Draw instructions
+    // Create a 40% smaller font for instructions
+    TTF_Font* smallerFont = TTF_OpenFont("assets/fonts/arial.ttf", 14); // 60% of normal font (assuming normal is ~24)
+    if (!smallerFont) {
+        smallerFont = normalFont; // Fallback to normal font if smaller font creation fails
+    }
+      // Draw instructions with smaller font and moved up 150 pixels from previous position (centered)
     SDL_Color lightBlueColor = {135, 206, 250, 255}; // Light blue
-    renderText(renderer, "Press ESC to return to Menu", 260, 400, normalFont, lightBlueColor);
-    renderText(renderer, "Press Q to Quit", 320, 440, normalFont, lightBlueColor);
+      // "Press ESC" text
+    SDL_Surface* escSurface = TTF_RenderText_Solid(smallerFont, "Press ESC to return to Menu", lightBlueColor);
+    if (escSurface) {
+        int escWidth = escSurface->w;
+        int escX = (screenWidth - escWidth) / 2;
+        SDL_FreeSurface(escSurface);
+        
+        renderText(renderer, "Press ESC to return to Menu", escX, 190, smallerFont, lightBlueColor);
+    }
+    
+    // "Press Q" text
+    SDL_Surface* quitSurface = TTF_RenderText_Solid(smallerFont, "Press Q to Quit", lightBlueColor);
+    if (quitSurface) {
+        int quitWidth = quitSurface->w;
+        int quitX = (screenWidth - quitWidth) / 2;
+        SDL_FreeSurface(quitSurface);
+        
+        renderText(renderer, "Press Q to Quit", quitX, 220, smallerFont, lightBlueColor);
+    }
+    
+    // Close the smaller font if we created a new one
+    if (smallerFont != normalFont) {
+        TTF_CloseFont(smallerFont);
+    }
 }
 
 // Render settings menu
@@ -1583,15 +1629,16 @@ void renderSkinSelect(SDL_Renderer* renderer, TTF_Font* font) {
     
     // Draw horizontal divider
     SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
-    SDL_RenderDrawLine(renderer, 350, 180, 930, 180);
-
-    // Skin options
+    SDL_RenderDrawLine(renderer, 350, 180, 930, 180);    // Skin options
     const char* skinNames[] = {
         "Con meo da den",
         "Bombardino coccodrillo",
         "Capybara",
         "Tralalelo Tralala",
-        "Tung tung tung sahur"
+        "Tung tung tung sahur",
+        "Kera Candy",
+        "Win Sweet",
+        "When Event"
     };
     
     // Only show current skin selection in center

@@ -42,6 +42,9 @@ enum PlayerSkin {
     SKIN_ALT2,
     SKIN_ALT3,
     SKIN_ALT4,
+    SKIN_ALT5,  // Kera Candy
+    SKIN_ALT6,  // Win Sweet
+    SKIN_ALT7,  // When Event
     SKIN_COUNT
 };
 

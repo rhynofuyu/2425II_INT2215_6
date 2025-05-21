@@ -107,15 +107,16 @@ bool TextureManager::loadPlayerSkins(SDL_Renderer* renderer) {
     for (int i = 1; i < SKIN_COUNT; i++) {
         playerSkins[i][0] = tileTextures[PLAYER]; // Regular player
         playerSkins[i][1] = tileTextures[PLAYER_ON_TARGET]; // Player on target
-    }
-
-    // Try loading alternate skins if files exist
+    }    // Try loading alternate skins if files exist
     const char* skinBasePaths[SKIN_COUNT][2] = {
         {"assets/images/players/default/player.png", "assets/images/players/default/player_on_target.png"},
         {"assets/images/players/alt1/player.png", "assets/images/players/alt1/player_on_target.png"},
         {"assets/images/players/alt2/player.png", "assets/images/players/alt2/player_on_target.png"},
         {"assets/images/players/alt3/player.png", "assets/images/players/alt3/player_on_target.png"},
-        {"assets/images/players/alt4/player.png", "assets/images/players/alt4/player_on_target.png"}
+        {"assets/images/players/alt4/player.png", "assets/images/players/alt4/player_on_target.png"},
+        {"assets/images/players/alt5/player.png", "assets/images/players/alt5/player_on_target.png"},  // Kera Candy
+        {"assets/images/players/alt6/player.png", "assets/images/players/alt6/player_on_target.png"},  // Win Sweet
+        {"assets/images/players/alt7/player.png", "assets/images/players/alt7/player_on_target.png"}   // When Event
     };
     
     for (int i = 0; i < SKIN_COUNT; i++) {
