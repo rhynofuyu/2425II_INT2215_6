@@ -23,6 +23,7 @@
 // Forward declarations (function prototypes)
 void initGame();
 bool initMenuBackground(SDL_Renderer* renderer);
+bool initTutorialImage(SDL_Renderer* renderer); // Add tutorial image initialization
 void handleInput(SDL_Event& event);
 void renderMenu(SDL_Renderer* renderer, TTF_Font* font);
 void renderHUD(SDL_Renderer* renderer, TTF_Font* font, int levelNum, int moves, int pushes);
@@ -36,6 +37,9 @@ void cleanupMenuResources();
 void renderText(SDL_Renderer* renderer, const char* text, int x, int y, TTF_Font* font, SDL_Color textColor);
 void scanLevelsDirectory(const std::string& levelDirPath); // Add new function prototype
 void renderSolverStatus(SDL_Renderer* renderer, TTF_Font* font); // Add solver status renderer
+bool initTutorialImage(SDL_Renderer* renderer); // Tutorial image initialization
+void renderTutorial(SDL_Renderer* renderer); // Tutorial image rendering
+void renderTutorial(SDL_Renderer* renderer); // Add tutorial image renderer
 
 // Global constants
 const int TILE_SIZE = 40;  // Size of each tile in pixels
@@ -43,6 +47,7 @@ const int TILE_SIZE = 40;  // Size of each tile in pixels
 // Global menu state
 int currentMenuSelection = MENU_START_GAME;
 int currentSettingsSelection = SETTINGS_BACKGROUND_MUSIC;
+bool showingTutorial = false; // To track if tutorial image is being shown
 int currentSkinSelection = SKIN_DEFAULT;
 
 // Level complete animation variables
@@ -69,6 +74,7 @@ SDL_Window* window = nullptr;
 SDL_Texture* menuBackgroundTexture = nullptr;
 SDL_Texture* levelSelectBackgroundTexture = nullptr;
 SDL_Texture* gameLevelBackgroundTexture = nullptr;  // Background for gameplay levels
+SDL_Texture* tutorialTexture = nullptr;  // Tutorial guide image
 
 // Music/sound globals
 Mix_Music* backgroundMusic = nullptr;
@@ -204,11 +210,28 @@ int main(int argc, char* argv[]) {
     // Load sound effects
     soundEffects[0] = Mix_LoadWAV("assets/sounds/move.wav");
     soundEffects[1] = Mix_LoadWAV("assets/sounds/push.wav"); 
-    soundEffects[2] = Mix_LoadWAV("assets/sounds/complete.wav");
-
-    // Initialize menu background
+    soundEffects[2] = Mix_LoadWAV("assets/sounds/complete.wav");    // Initialize menu background
     if (!initMenuBackground(renderer)) {
         std::cout << "Failed to initialize menu background!" << std::endl;
+        TTF_CloseFont(largeFont);
+        TTF_CloseFont(font);
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        TTF_Quit();
+        IMG_Quit();
+        SDL_Quit();
+        return -1;
+    }
+    
+    // Initialize tutorial image
+    if (!initTutorialImage(renderer)) {
+        std::cout << "Failed to initialize tutorial image!" << std::endl;
+        // We can continue without the tutorial image
+    }
+    
+    // Initialize tutorial image
+    if (!initTutorialImage(renderer)) {
+        std::cout << "Failed to initialize tutorial image!" << std::endl;
         TTF_CloseFont(largeFont);
         TTF_CloseFont(font);
         SDL_DestroyRenderer(renderer);
@@ -278,10 +301,14 @@ int main(int argc, char* argv[]) {
             renderGameComplete(renderer, font, largeFont, game.player.moves, game.player.pushes);
         } else if (game.currentState == LEVEL_SELECT) {
             // Render the level selection screen
-            renderLevelSelect(renderer, font);
-        } else if (game.currentState == SETTINGS) {
+            renderLevelSelect(renderer, font);        } else if (game.currentState == SETTINGS) {
             // Render the settings menu
             renderSettings(renderer, font);
+            
+            // If tutorial is being shown, render it on top
+            if (showingTutorial) {
+                renderTutorial(renderer);
+            }
         } else if (game.currentState == SKIN_SELECT) {
             // Render the skin selection screen
             renderSkinSelect(renderer, font);
@@ -515,11 +542,15 @@ void handleInput(SDL_Event& event) {
         
         return;
     }
-    
-    // Handle settings state
+      // Handle settings state
     if (game.currentState == SETTINGS) {
         switch (event.key.keysym.sym) {
             case SDLK_ESCAPE:
+                // If tutorial is showing, close it, otherwise return to main menu
+                if (showingTutorial) {
+                    showingTutorial = false;
+                    return;
+                }
                 // Return to main menu
                 game.currentState = MENU;
                 return;
@@ -561,11 +592,14 @@ void handleInput(SDL_Event& event) {
                     game.settings.sfxEnabled = !game.settings.sfxEnabled;
                 }
                 return;
-                
-            case SDLK_RETURN:
+                  case SDLK_RETURN:
             case SDLK_SPACE:
                 // Select the current setting
-                if (currentSettingsSelection == SETTINGS_BACK) {
+                if (currentSettingsSelection == SETTINGS_TUTORIALS) {
+                    // Toggle tutorial display
+                    showingTutorial = true;
+                }
+                else if (currentSettingsSelection == SETTINGS_BACK) {
                     game.currentState = MENU;
                 }
                 return;
@@ -934,6 +968,11 @@ bool checkWinCondition(Level* level) {
 
 // Render text on the screen
 void renderText(SDL_Renderer* renderer, const char* text, int x, int y, TTF_Font* font, SDL_Color textColor) {
+    // Kiểm tra text rỗng hoặc null để tránh lỗi "Text has zero width"
+    if (!text || strlen(text) == 0) {
+        return;
+    }
+    
     SDL_Surface* textSurface = TTF_RenderText_Solid(font, text, textColor);
     if (!textSurface) {
         std::cout << "Unable to render text surface! SDL_ttf Error: " << TTF_GetError() << std::endl;
@@ -1512,22 +1551,20 @@ void renderSettings(SDL_Renderer* renderer, TTF_Font* font) {
     
     // Draw horizontal divider
     SDL_SetRenderDrawColor(renderer, 200, 200, 200, 255);
-    SDL_RenderDrawLine(renderer, 350, 180, 930, 180);
-
-    // Settings menu items
+    SDL_RenderDrawLine(renderer, 350, 180, 930, 180);    // Settings menu items
     const char* settingsItems[] = {
         "Background Music",
         "Sound Effects",
+        "Tutorials",
         "Back to Main Menu"
-    };
-    
-    // Current values for settings
+    };    // Current values for settings
     std::string bgmValue = game.settings.bgmEnabled ? "ON" : "OFF";
     std::string sfxValue = game.settings.sfxEnabled ? "ON" : "OFF";
     
     const std::string settingsValues[] = {
         bgmValue,
         sfxValue,
+        "",  // Tutorials option (remove "Press Enter")
         ""  // Back option has no value
     };
     
@@ -1547,14 +1584,11 @@ void renderSettings(SDL_Renderer* renderer, TTF_Font* font) {
         } else {
             textColor = {255, 255, 255, 255}; // White for unselected items
             itemText = settingsItems[i];
-        }
-        
-        // Render the setting name
+        }        // Render the setting name
         renderText(renderer, itemText.c_str(), 370, startY + i * itemSpacing, font, textColor);
-        
-        // Render the setting value (except for Back option)
-        if (i < SETTINGS_BACK) {
-            renderText(renderer, settingsValues[i].c_str(), 800, startY + i * itemSpacing, font, valueColor);
+          // Render the setting value (except for Back option and empty strings)
+        if (i < SETTINGS_BACK && !settingsValues[i].empty()) {
+            renderText(renderer, settingsValues[i].c_str(), 825, startY + i * itemSpacing, font, valueColor);
         }
     }
     
@@ -1796,6 +1830,73 @@ bool initMenuBackground(SDL_Renderer* renderer) {
     return true;
 }
 
+// Initialize tutorial image
+bool initTutorialImage(SDL_Renderer* renderer) {
+    SDL_Surface* tutorialSurface = IMG_Load("assets/images/tutorial/guide.png");
+    
+    if (tutorialSurface) {
+        tutorialTexture = SDL_CreateTextureFromSurface(renderer, tutorialSurface);
+        SDL_FreeSurface(tutorialSurface);
+        
+        if (!tutorialTexture) {
+            std::cerr << "Failed to create tutorial texture" << std::endl;
+            return false;
+        }
+        
+        return true;
+    }
+    
+    std::cerr << "Failed to load tutorial image" << std::endl;
+    return false;
+}
+
+// Render tutorial image overlay
+void renderTutorial(SDL_Renderer* renderer) {
+    if (!tutorialTexture) {
+        return;
+    }
+    
+    // Draw a semi-transparent background
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 200); // Semi-transparent black
+    SDL_Rect fullScreenRect = {0, 0, 1280, 720};
+    SDL_RenderFillRect(renderer, &fullScreenRect);
+    
+    // Get the dimensions of the tutorial image
+    int imgWidth, imgHeight;
+    SDL_QueryTexture(tutorialTexture, NULL, NULL, &imgWidth, &imgHeight);
+    
+    // Calculate position to center the image
+    int x = (1280 - imgWidth) / 2;
+    int y = (720 - imgHeight) / 2;
+    
+    // Create a rectangle for rendering the texture
+    SDL_Rect destRect = {x, y, imgWidth, imgHeight};
+    
+    // Render the tutorial image
+    SDL_RenderCopy(renderer, tutorialTexture, NULL, &destRect);
+    
+    // Add "Press ESC to return" text at the bottom
+    SDL_Color textColor = {255, 255, 255, 255}; // White
+    const char* escText = "Press ESC to close tutorial";
+    
+    // Create a temporary font for the text
+    TTF_Font* font = TTF_OpenFont("assets/fonts/arial.ttf", 18);
+    if (font) {
+        // Calculate text position at the bottom center
+        SDL_Surface* textSurface = TTF_RenderText_Solid(font, escText, textColor);
+        if (textSurface) {
+            int textX = (1280 - textSurface->w) / 2;
+            int textY = y + imgHeight + 20;
+            SDL_FreeSurface(textSurface);
+            
+            renderText(renderer, escText, textX, textY, font, textColor);
+        }
+        
+        TTF_CloseFont(font);
+    }
+}
+
 // Clean up menu resources
 void cleanupMenuResources() {
     if (menuBackgroundTexture) {
@@ -1811,6 +1912,11 @@ void cleanupMenuResources() {
     if (gameLevelBackgroundTexture) {
         SDL_DestroyTexture(gameLevelBackgroundTexture);
         gameLevelBackgroundTexture = nullptr;
+    }
+    
+    if (tutorialTexture) {
+        SDL_DestroyTexture(tutorialTexture);
+        tutorialTexture = nullptr;
     }
 }
 
