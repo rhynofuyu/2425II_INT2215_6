@@ -1951,8 +1951,20 @@ void scanLevelsDirectory(const std::string& levelDirPath) {
     
     closedir(dir);
     
-    // Sort level file names to ensure they are in order
-    std::sort(dynamicLevelFiles.begin(), dynamicLevelFiles.end());
+    // Sort level file names numerically instead of lexicographically
+    std::sort(dynamicLevelFiles.begin(), dynamicLevelFiles.end(), 
+        [](const std::string& a, const std::string& b) {
+            // Extract level numbers from filenames
+            std::string fileA = a.substr(a.find_last_of('/') + 1);
+            std::string fileB = b.substr(b.find_last_of('/') + 1);
+            
+            // Remove "level" prefix and ".txt" suffix to get just the number
+            int numA = std::stoi(fileA.substr(5, fileA.length() - 9));
+            int numB = std::stoi(fileB.substr(5, fileB.length() - 9));
+            
+            // Compare the numbers
+            return numA < numB;
+        });
     
     std::cout << "Loaded " << totalLoadedLevels << " levels from " << levelDirPath << std::endl;
 }
