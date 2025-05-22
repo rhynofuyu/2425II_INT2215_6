@@ -5,7 +5,6 @@
 #include <iostream>
 #include <sstream>
 
-// Khai báo mảng tên file level
 const std::string levelFileNames[] = {
     "levels/level1.txt",
     "levels/level2.txt",
@@ -29,7 +28,6 @@ const std::string levelFileNames[] = {
     "levels/level20.txt"
 };
 
-// Tính toán số lượng level dựa trên kích thước mảng levelFileNames
 int totalLoadedLevels = sizeof(levelFileNames) / sizeof(levelFileNames[0]);
 
 // Biến theo dõi level hiện tại

@@ -14,4 +14,7 @@ extern Mix_Chunk* soundEffects[3];
 // Player skin file paths
 extern const char* playerSkinNames[SKIN_COUNT][2];
 
+// Make sure this function is properly declared
+bool saveSettings(const char* filename);
+
 #endif // GAME_RESOURCES_H
