@@ -12,7 +12,7 @@ Nhân vật chính đang ở trong một thư viện bỏ hoang, mục tiêu c�
 Người chơi cần tìm cách sử dụng các phím điều hướng lên / xuống / trái / phải để di chuyển nhân vật chính và đẩy các "kệ sách" vào đích của chúng
 
 ### Ngưỡng điểm tự đánh giá
-9 - 9.5
+8.5-9
 
 ### Nguồn tham khảo
 Code, ý tưởng:
