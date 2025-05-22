@@ -71,27 +71,27 @@ Status bar
 
 Các điểm nổi bật khác:
 
-- Quản lí các đối tượng bằng vector
-
-- Đạn
-
-- Laser beam
-
-- Enemy
-
-- Drop / Power-up
-
-- Camera scrolling
-
-- Button hovering
-
-- Bộ sinh số ngẫu nhiên
-
-- AABB Collision
-
-- OBB Collision
-
-- Game Levels
+  - Kiến trúc module hóa với các file header riêng biệt
+  
+  - Sử dụng đầy đủ hệ sinh thái SDL2 (SDL_image, SDL_mixer, SDL_ttf)
+  
+  - Quản lý tài nguyên đồ họa qua TextureManager
+  
+  - Thuật toán solver tự động giải màn chơi
+  
+  - Hệ thống quản lý màn chơi (level system)
+  
+  - Cơ chế phát hiện va chạm (cho tường, hộp, người chơi)
+  
+  - Hệ thống lưu/nạp điểm cao (highscores)
+  
+  - Xử lý input theo trạng thái game
+  
+  - Render menu và UI với SDL_ttf
+  
+  - Cơ chế hoàn tác (undo system)
+  
+  - Quản lý trạng thái game (game state management)
 
 ## Demo
 ![image](https://github.com/user-attachments/assets/cad0fa62-c399-4dc1-9064-442aa371d66e)
