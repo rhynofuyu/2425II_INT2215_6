@@ -27,12 +27,14 @@ Assets:
 
 [https://itch.io/game-assets](https://itch.io/game-assets)
 
+Tài liệu code SDL2 của Lazyfoo.
+
 Genfest 2024
 
 Audio:
 https://pixabay.com
 
-Mức độ sử dụng AI: 30% (?) bao gồm debug, gợi ý và lên kế hoạch, cho ý tưởng
+Mức độ sử dụng AI: debug, gợi ý và lên kế hoạch, cho ý tưởng
 
 ### Checklist
 Dùng các lệnh vẽ hình
