@@ -18,6 +18,7 @@
 #include "src/include/game_structures.h"
 #include "src/include/texture_manager.h"
 #include "src/include/solver.h"
+#include "src/include/game_resources.h"
 
 void initGame();
 bool initMenuBackground(SDL_Renderer* renderer);
@@ -67,20 +68,6 @@ SDL_Texture* menuBackgroundTexture = nullptr;
 SDL_Texture* levelSelectBackgroundTexture = nullptr;
 SDL_Texture* gameLevelBackgroundTexture = nullptr;
 SDL_Texture* tutorialTexture = nullptr;
-
-Mix_Music* backgroundMusic = nullptr;
-Mix_Chunk* soundEffects[3] = {nullptr};
-
-const char* playerSkinNames[SKIN_COUNT][2] = {
-    {"assets/images/players/default/player.png", "assets/images/players/default/player_on_target.png"},
-    {"assets/images/players/alt1/player.png", "assets/images/players/alt1/player_on_target.png"},
-    {"assets/images/players/alt2/player.png", "assets/images/players/alt2/player_on_target.png"},
-    {"assets/images/players/alt3/player.png", "assets/images/players/alt3/player_on_target.png"},
-    {"assets/images/players/alt4/player.png", "assets/images/players/alt4/player_on_target.png"},
-    {"assets/images/players/alt5/player.png", "assets/images/players/alt5/player_on_target.png"},
-    {"assets/images/players/alt6/player.png", "assets/images/players/alt6/player_on_target.png"},
-    {"assets/images/players/alt7/player.png", "assets/images/players/alt7/player_on_target.png"}
-};
 
 std::vector<std::string> dynamicLevelFiles;
 extern int totalLoadedLevels;
