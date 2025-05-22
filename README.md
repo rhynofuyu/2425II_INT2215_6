@@ -12,7 +12,7 @@ Nhân vật chính đang ở trong một thư viện bỏ hoang, mục tiêu c�
 Người chơi cần tìm cách sử dụng các phím điều hướng lên / xuống / trái / phải để di chuyển nhân vật chính và đẩy các "kệ sách" vào đích của chúng
 
 ### Ngưỡng điểm tự đánh giá
-9 - 10
+9 - 9.5
 
 ### Nguồn tham khảo
 Code, ý tưởng:
@@ -91,4 +91,29 @@ Các điểm nổi bật khác:
 
 - OBB Collision
 
-- Game Modes
+- Game Levels
+
+## Demo
+![image](https://github.com/user-attachments/assets/cad0fa62-c399-4dc1-9064-442aa371d66e)
+![image](https://github.com/user-attachments/assets/5ad888f6-86dd-4cfe-8847-8d0a23c42cc8)
+![image](https://github.com/user-attachments/assets/d275999f-1227-4a2a-b279-fa0298f20deb)
+![image](https://github.com/user-attachments/assets/2cea8bd9-4cf4-4fc4-ab10-27d0e64c5caa)
+![image](https://github.com/user-attachments/assets/98e0c593-98a9-4c7b-a322-b9aa5d5f8bd0)
+![image](https://github.com/user-attachments/assets/dadaa4d4-2205-48fd-ad78-b4c4bca32e64)
+![image](https://github.com/user-attachments/assets/5932cde7-af5d-47a4-b21e-66701dabab52)
+![image](https://github.com/user-attachments/assets/c8e53ccc-05fb-4df2-914f-ca32f59739e2)
+![image](https://github.com/user-attachments/assets/91c112c3-8c17-41ba-a9b1-1ddf75b23e2e)
+![image](https://github.com/user-attachments/assets/23fe2ba2-22dc-4049-ba44-2a57bcbd3776)
+![image](https://github.com/user-attachments/assets/0cdff71a-6ab5-44cd-b662-f465771fbcc6)
+![image](https://github.com/user-attachments/assets/072410e5-8ee6-49cc-9c89-e44bb2ef0a0c)
+
+
+
+
+
+
+
+
+
+
+
