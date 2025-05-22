@@ -15,16 +15,21 @@
 #include <dirent.h> // Add this for directory operations
 #include <thread>   // Add this for solver thread
 
-// Include our game structures
+// Include game components
 #include "src/include/game_structures.h"
 #include "src/include/texture_manager.h"
-#include "src/include/solver.h"  // Add solver include
+#include "src/include/solver.h"
 
-// Forward declarations (function prototypes)
+// Function prototypes
 void initGame();
 bool initMenuBackground(SDL_Renderer* renderer);
-bool initTutorialImage(SDL_Renderer* renderer); // Add tutorial image initialization
+bool initTutorialImage(SDL_Renderer* renderer);
 void handleInput(SDL_Event& event);
+void renderText(SDL_Renderer* renderer, const char* text, int x, int y, TTF_Font* font, SDL_Color textColor);
+void cleanupMenuResources();
+void scanLevelsDirectory(const std::string& levelDirPath);
+
+// Render functions
 void renderMenu(SDL_Renderer* renderer, TTF_Font* font);
 void renderHUD(SDL_Renderer* renderer, TTF_Font* font, int levelNum, int moves, int pushes);
 void renderLevelComplete(SDL_Renderer* renderer, TTF_Font* normalFont, TTF_Font* largeFont, int levelNum, int moves, int pushes);
@@ -32,19 +37,16 @@ void renderGameComplete(SDL_Renderer* renderer, TTF_Font* normalFont, TTF_Font* 
 void renderLevelSelect(SDL_Renderer* renderer, TTF_Font* font);
 void renderSettings(SDL_Renderer* renderer, TTF_Font* font);
 void renderSkinSelect(SDL_Renderer* renderer, TTF_Font* font);
+void renderTutorial(SDL_Renderer* renderer);
+void renderSolverStatus(SDL_Renderer* renderer, TTF_Font* font);
+
+// Game logic
 bool checkWinCondition(Level* level);
-void cleanupMenuResources();
-void renderText(SDL_Renderer* renderer, const char* text, int x, int y, TTF_Font* font, SDL_Color textColor);
-void scanLevelsDirectory(const std::string& levelDirPath); // Add new function prototype
-void renderSolverStatus(SDL_Renderer* renderer, TTF_Font* font); // Add solver status renderer
-bool initTutorialImage(SDL_Renderer* renderer); // Tutorial image initialization
-void renderTutorial(SDL_Renderer* renderer); // Tutorial image rendering
-void renderTutorial(SDL_Renderer* renderer); // Add tutorial image renderer
 
 // Global constants
-const int TILE_SIZE = 40;  // Size of each tile in pixels
+const int TILE_SIZE = 40;  // Tile size in pixels
 
-// Global menu state
+// Global UI state variables
 int currentMenuSelection = MENU_START_GAME;
 int currentSettingsSelection = SETTINGS_BACKGROUND_MUSIC;
 bool showingTutorial = false; // To track if tutorial image is being shown
@@ -1899,72 +1901,45 @@ void renderTutorial(SDL_Renderer* renderer) {
 
 // Clean up menu resources
 void cleanupMenuResources() {
-    if (menuBackgroundTexture) {
-        SDL_DestroyTexture(menuBackgroundTexture);
-        menuBackgroundTexture = nullptr;
-    }
-
-    if (levelSelectBackgroundTexture) {
-        SDL_DestroyTexture(levelSelectBackgroundTexture);
-        levelSelectBackgroundTexture = nullptr;
-    }
-    
-    if (gameLevelBackgroundTexture) {
-        SDL_DestroyTexture(gameLevelBackgroundTexture);
-        gameLevelBackgroundTexture = nullptr;
-    }
-    
-    if (tutorialTexture) {
-        SDL_DestroyTexture(tutorialTexture);
-        tutorialTexture = nullptr;
+    // Xóa nhiều texture cùng một lúc với vòng lặp
+    for (auto& texture : {&menuBackgroundTexture, &levelSelectBackgroundTexture, 
+                          &gameLevelBackgroundTexture, &tutorialTexture}) {
+        if (*texture) {
+            SDL_DestroyTexture(*texture);
+            *texture = nullptr;
+        }
     }
 }
 
 // Modified function to scan levels directory
-void scanLevelsDirectory(const std::string& levelDirPath) {
-    // Clear existing level file names
+void scanLevelsDirectory(const std::string& path) {
     dynamicLevelFiles.clear();
     totalLoadedLevels = 0;
     
-    DIR* dir = opendir(levelDirPath.c_str());
-    if (dir == nullptr) {
-        std::cerr << "Error opening levels directory: " << levelDirPath << std::endl;
+    DIR* dir = opendir(path.c_str());
+    if (!dir) {
+        std::cerr << "Error opening: " << path << std::endl;
         return;
     }
     
-    struct dirent* entry;
-    while ((entry = readdir(dir)) != nullptr) {
-        std::string filename = entry->d_name;
-        
-        // Skip . and .. directories
-        if (filename == "." || filename == "..") {
-            continue;
-        }
-        
-        // Check if file has .txt extension
-        if (filename.size() > 4 && filename.substr(filename.size() - 4) == ".txt") {
-            // Add to level file names
-            dynamicLevelFiles.push_back(levelDirPath + "/" + filename);
+    // Sử dụng vòng lặp for ngắn gọn hơn
+    for (struct dirent* entry; (entry = readdir(dir));) {
+        std::string file = entry->d_name;
+        if (file.size() > 4 && file.substr(file.size() - 4) == ".txt") {
+            dynamicLevelFiles.push_back(path + "/" + file);
             totalLoadedLevels++;
         }
     }
-    
     closedir(dir);
     
-    // Sort level file names numerically instead of lexicographically
+    // Sắp xếp các file theo số thứ tự
     std::sort(dynamicLevelFiles.begin(), dynamicLevelFiles.end(), 
-        [](const std::string& a, const std::string& b) {
-            // Extract level numbers from filenames
+        [](const auto& a, const auto& b) {
             std::string fileA = a.substr(a.find_last_of('/') + 1);
             std::string fileB = b.substr(b.find_last_of('/') + 1);
-            
-            // Remove "level" prefix and ".txt" suffix to get just the number
-            int numA = std::stoi(fileA.substr(5, fileA.length() - 9));
-            int numB = std::stoi(fileB.substr(5, fileB.length() - 9));
-            
-            // Compare the numbers
-            return numA < numB;
+            return std::stoi(fileA.substr(5, fileA.length() - 9)) < 
+                   std::stoi(fileB.substr(5, fileB.length() - 9));
         });
     
-    std::cout << "Loaded " << totalLoadedLevels << " levels from " << levelDirPath << std::endl;
+    std::cout << "Loaded " << totalLoadedLevels << " levels from " << path << std::endl;
 }
