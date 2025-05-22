@@ -67,7 +67,7 @@ Menu
 
 Pause / Resume
 
-Status bar / Lives (mạng/máu...)
+Status bar
 
 Các điểm nổi bật khác:
 
