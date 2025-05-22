@@ -13,13 +13,11 @@
 #include "src/include/game_init.h"
 
 int main(int argc, char* argv[]) {
-    // Initialize SDL and subsystems
     if (!initSDL()) {
         std::cout << "Failed to initialize SDL!" << std::endl;
         return -1;
     }
 
-    // Create window and renderer
     SDL_Window* window = nullptr;
     SDL_Renderer* renderer = nullptr;
     if (!createWindowAndRenderer(&window, &renderer)) {
@@ -28,7 +26,6 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-    // Initialize game resources
     if (!initGameResources(renderer)) {
         std::cout << "Failed to initialize game resources!" << std::endl;
         cleanupGameResources();
@@ -37,10 +34,8 @@ int main(int argc, char* argv[]) {
         return -1;
     }
     
-    // Initialize game state
     initGame();
     
-    // Main game loop
     bool running = true;
     SDL_Event event;
     
@@ -62,7 +57,6 @@ int main(int argc, char* argv[]) {
         SDL_Delay(16);
     }
 
-    // Cleanup resources
     saveHighScores("highscores.dat");
     cleanupGameResources();
     destroyWindowAndRenderer(window, renderer);
