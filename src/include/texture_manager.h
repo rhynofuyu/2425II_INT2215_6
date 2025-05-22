@@ -6,15 +6,13 @@
 #include <SDL2/SDL_mixer.h>
 #include "game_structures.h"
 
-// Define the number of different wall textures
 #define WALL_TEXTURE_COUNT 4
 
-// Structure to hold game textures
 struct TextureManager {
-    SDL_Texture* tileTextures[7]; // One texture for each TileType
-    SDL_Texture* wallTextures[WALL_TEXTURE_COUNT]; // Array to store multiple wall textures
-    SDL_Texture* playerSkins[SKIN_COUNT][2]; // [skin][0=normal, 1=on_target]
-      // Constructor - initialize pointers to nullptr
+    SDL_Texture* tileTextures[7];
+    SDL_Texture* wallTextures[WALL_TEXTURE_COUNT];
+    SDL_Texture* playerSkins[SKIN_COUNT][2];
+    
     TextureManager() {
         for (int i = 0; i < 7; i++) {
             tileTextures[i] = nullptr;
@@ -31,28 +29,20 @@ struct TextureManager {
         }
     }
     
-    // Destructor - cleanup textures
     ~TextureManager() {
         destroyTextures();
     }
     
-    // Load all game textures
     bool loadTextures(SDL_Renderer* renderer);
-    
-    // Load player skin textures
     bool loadPlayerSkins(SDL_Renderer* renderer);
-    
-    // Clean up and destroy all textures
     void destroyTextures();
 };
 
-// Function to render the level using textures
 void renderLevel(SDL_Renderer* renderer, const Level& level, const PlayerInfo& player, TextureManager& textures);
 
-// Game music manager
 struct MusicManager {
     Mix_Music* bgm;
-    Mix_Chunk* sfx[3]; // For move, push, and level complete sounds
+    Mix_Chunk* sfx[3];
     
     MusicManager() : bgm(nullptr) {
         for (int i = 0; i < 3; i++) {
@@ -85,8 +75,7 @@ struct MusicManager {
 extern TextureManager gameTextures;
 extern MusicManager gameSounds;
 
-// Functions to save/load settings
 bool loadSettings(const char* filename);
 bool saveSettings(const char* filename);
 
-#endif // TEXTURE_MANAGER_H
+#endif
