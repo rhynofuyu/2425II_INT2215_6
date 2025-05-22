@@ -783,3 +783,7 @@ void renderTutorial(SDL_Renderer* renderer) {
         TTF_CloseFont(font);
     }
 }
+
+void renderLevel(SDL_Renderer* renderer, Level& level, Player& player, TextureManager& textures) {
+    // Function implementation remains the same
+}

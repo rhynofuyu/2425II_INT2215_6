@@ -1,29 +1,27 @@
 # Makefile for Sokoban Game on Windows
 
-# Compiler settings
-CXX = g++
-CXXFLAGS = -Wall -std=c++17 -Dmain=SDL_main
+CC = g++
+CFLAGS = -Wall -std=c++17 -Dmain=SDL_main -I./src/include
+LDFLAGS = -L./src/lib -lmingw32 -lSDL2main -lSDL2 -lSDL2_image -lSDL2_ttf -lSDL2_mixer
 
-# Include and library paths
-INCLUDES = -I./src/include
-LIBS = -L./src/lib -lmingw32 -lSDL2main -lSDL2 -lSDL2_image -lSDL2_ttf -lSDL2_mixer
+SOURCES = main.cpp \
+          src/game_structures.cpp \
+          src/texture_manager.cpp \
+          src/solver.cpp \
+          src/game_resources.cpp \
+          src/renderer.cpp \
+          src/input_handler.cpp \
+          src/game_init.cpp
 
-# Source and output files
-SRCS := main.cpp src/game_structures.cpp src/texture_manager.cpp src/solver.cpp src/game_resources.cpp src/renderer.cpp src/input_handler.cpp
-OUTPUT = main.exe
+EXECUTABLE = main.exe
 
-# Build rule
-all: $(OUTPUT)
+all: $(EXECUTABLE)
 
-$(OUTPUT): $(SRCS)
-	$(CXX) $(CXXFLAGS) $(INCLUDES) $^ -o $@ $(LIBS)
+$(EXECUTABLE): $(SOURCES)
+	$(CC) $(CFLAGS) $(SOURCES) -o $@ $(LDFLAGS)
 
-# Clean rule
+run: $(EXECUTABLE)
+	./$(EXECUTABLE)
+
 clean:
-	del $(OUTPUT)
-
-# Run rule
-run: $(OUTPUT)
-	.\$(OUTPUT)
-
-.PHONY: run
+	rm -f $(EXECUTABLE)
