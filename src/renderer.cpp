@@ -11,12 +11,10 @@
 #include <string>
 #include <vector>
 #include <algorithm>
-#include <cstring> // Added for strlen
+#include <cstring>
 
-// Add this constant definition near the top of the file, before it's used
-const Uint32 SOLUTION_STEP_DELAY = 300; // milliseconds between solution steps
+const Uint32 SOLUTION_STEP_DELAY = 300;
 
-// External variables from main.cpp
 extern int currentMenuSelection;
 extern int currentSettingsSelection;
 extern bool showingTutorial;
@@ -37,13 +35,12 @@ extern bool showSolverStats;
 extern int solverNodesExplored;
 extern int solverMaxQueueSize;
 extern int solverExecutionTimeMs;
-extern GameData game; // Fixed: changed from GameStruct to GameData
-extern TextureManager gameTextures; // Fixed: changed to TextureManager
+extern GameData game;
+extern TextureManager gameTextures;
 extern Mix_Chunk* soundEffects[];
-extern const char* playerSkinNames[SKIN_COUNT][2]; // Fixed: matched declaration from game_resources.h
-extern void renderLevel(SDL_Renderer* renderer, Level& level, Player& player, TextureManager& textures); // Fixed: use TextureManager
+extern const char* playerSkinNames[SKIN_COUNT][2];
+extern void renderLevel(SDL_Renderer* renderer, Level& level, Player& player, TextureManager& textures);
 
-// Rendering functions implementations
 void renderText(SDL_Renderer* renderer, const char* text, int x, int y, TTF_Font* font, SDL_Color textColor) {
     if (!text || strlen(text) == 0) {
         return;
@@ -572,7 +569,7 @@ void renderSettings(SDL_Renderer* renderer, TTF_Font* font) {
     const int startY = 220;
     const int itemSpacing = 60;
     
-    for (int i = 0; i < 4; i++) {  // Using 4 instead of SETTINGS_COUNT
+    for (int i = 0; i < 4; i++) {
         SDL_Color textColor;
         SDL_Color valueColor = {255, 255, 100, 255};
         std::string itemText;
@@ -587,7 +584,7 @@ void renderSettings(SDL_Renderer* renderer, TTF_Font* font) {
         
         renderText(renderer, itemText.c_str(), 370, startY + i * itemSpacing, font, textColor);
         
-        if (i < 2 && !settingsValues[i].empty()) {  // Using 2 instead of SETTINGS_BACK
+        if (i < 2 && !settingsValues[i].empty()) {
             renderText(renderer, settingsValues[i].c_str(), 825, startY + i * itemSpacing, font, valueColor);
         }
     }
@@ -662,7 +659,7 @@ void renderSkinSelect(SDL_Renderer* renderer, TTF_Font* font) {
     
     int currentSkin = currentSkinSelection;
     
-    if (currentSkin >= 8) {  // Using 8 instead of SKIN_COUNT
+    if (currentSkin >= 8) {
         currentSkin = 0;
     }
     
@@ -701,9 +698,9 @@ void renderSkinSelect(SDL_Renderer* renderer, TTF_Font* font) {
     int nameX = centerX - nameWidth / 2;
     renderText(renderer, skinName.c_str(), nameX, centerY + 100, font, normalTextColor);
     
-    SDL_Color backColor = currentSkinSelection == 8 ?  // Using 8 instead of SKIN_COUNT
+    SDL_Color backColor = currentSkinSelection == 8 ? 
                          SDL_Color{0, 255, 0, 255} : SDL_Color{255, 255, 255, 255};
-    std::string backText = currentSkinSelection == 8 ?  // Using 8 instead of SKIN_COUNT
+    std::string backText = currentSkinSelection == 8 ? 
                          "> Back to Main Menu <" : "Back to Main Menu";
                          
     SDL_Surface* backSurface = TTF_RenderText_Solid(font, backText.c_str(), backColor);
@@ -785,5 +782,4 @@ void renderTutorial(SDL_Renderer* renderer) {
 }
 
 void renderLevel(SDL_Renderer* renderer, Level& level, Player& player, TextureManager& textures) {
-    // Function implementation remains the same
 }

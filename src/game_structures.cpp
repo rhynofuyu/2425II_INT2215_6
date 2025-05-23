@@ -30,34 +30,25 @@ const std::string levelFileNames[] = {
 
 int totalLoadedLevels = sizeof(levelFileNames) / sizeof(levelFileNames[0]);
 
-// Biến theo dõi level hiện tại
 int currentLevelIndex = 0;
 
-// Khởi tạo biến game toàn cục
 GameData game;
 
-// Filepath constants for settings
 const char* SETTINGS_FILEPATH = "game_settings.dat";
 
-// Function to initialize a level
 void initializeLevel(Level* level, PlayerInfo* player, int playerStartX, int playerStartY) {
-    // Copy original map to current map
     for (int y = 0; y < level->height; y++) {
         for (int x = 0; x < level->width; x++) {
             level->currentMap[y][x] = level->originalMap[y][x];
         }
     }
     
-    // Set player position
     player->x = playerStartX;
     player->y = playerStartY;
     
-    // Reset player stats
     player->moves = 0;
     player->pushes = 0;
     
-    // Hiển thị nhân vật trên bản đồ tại vị trí khởi tạo
-    // Kiểm tra xem vị trí ban đầu có phải là target hay không
     if (level->originalMap[playerStartY][playerStartX] == TARGET) {
         level->currentMap[playerStartY][playerStartX] = PLAYER_ON_TARGET;
     } else {
@@ -65,14 +56,12 @@ void initializeLevel(Level* level, PlayerInfo* player, int playerStartX, int pla
     }
 }
 
-// Function to load a level from a text file
 bool loadLevelFromFile(const char* filename, Level* outLevel) {
     std::ifstream file(filename);
     if (!file.is_open()) {
-        return false; // Failed to open file
+        return false;
     }
     
-    // Read all lines from file to determine dimensions
     std::vector<std::string> lines;
     std::string line;
     int maxWidth = 0;
@@ -84,15 +73,13 @@ bool loadLevelFromFile(const char* filename, Level* outLevel) {
         }
     }
     
-    // Set dimensions
     int height = lines.size();
     int width = maxWidth;
     
     if (height == 0 || width == 0) {
-        return false; // Empty or invalid file
+        return false;
     }
     
-    // Clean up any existing maps in the level
     if (outLevel->currentMap) {
         for (int y = 0; y < outLevel->height; y++) {
             delete[] outLevel->currentMap[y];
@@ -109,7 +96,6 @@ bool loadLevelFromFile(const char* filename, Level* outLevel) {
         outLevel->originalMap = nullptr;
     }
     
-    // Allocate memory for the maps
     outLevel->width = width;
     outLevel->height = height;
     
@@ -120,59 +106,56 @@ bool loadLevelFromFile(const char* filename, Level* outLevel) {
         outLevel->originalMap[y] = new TileType[width];
         outLevel->currentMap[y] = new TileType[width];
         
-        // Initialize with WALL for areas outside of the map shape
         for (int x = 0; x < width; x++) {
-            outLevel->originalMap[y][x] = WALL; // Default to wall for empty areas
+            outLevel->originalMap[y][x] = WALL;
             outLevel->currentMap[y][x] = WALL;
         }
     }
     
-    // Parse the file content
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < static_cast<int>(lines[y].length()); x++) {
             char c = lines[y][x];
             
             switch (c) {
-                case '#': // Wall
+                case '#':
                     outLevel->originalMap[y][x] = WALL;
                     break;
                     
-                case ' ': // Empty floor
+                case ' ':
                     outLevel->originalMap[y][x] = EMPTY;
                     break;
                     
-                case '@': // Player
-                    outLevel->originalMap[y][x] = EMPTY; // The tile underneath is empty
+                case '@':
+                    outLevel->originalMap[y][x] = EMPTY;
                     outLevel->playerStartX = x;
                     outLevel->playerStartY = y;
                     break;
                     
-                case '$': // Box
+                case '$':
                     outLevel->originalMap[y][x] = BOX;
                     break;
                     
-                case '.': // Target
+                case '.':
                     outLevel->originalMap[y][x] = TARGET;
                     break;
                     
-                case '*': // Box on target (for compatibility with standard Sokoban format)
+                case '*':
                     outLevel->originalMap[y][x] = BOX_ON_TARGET;
                     break;
                     
-                case '+': // Player on target (for compatibility with standard Sokoban format)
-                    outLevel->originalMap[y][x] = TARGET; // The tile underneath is a target
+                case '+':
+                    outLevel->originalMap[y][x] = TARGET;
                     outLevel->playerStartX = x;
                     outLevel->playerStartY = y;
                     break;
                     
-                default: // Treat any other character as wall to prevent access
+                default:
                     outLevel->originalMap[y][x] = WALL;
                     break;
             }
         }
     }
     
-    // Copy originalMap to currentMap
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
             outLevel->currentMap[y][x] = outLevel->originalMap[y][x];
@@ -182,39 +165,31 @@ bool loadLevelFromFile(const char* filename, Level* outLevel) {
     return true;
 }
 
-// Record a move for undo functionality
 void recordMove(const MoveRecord& move) {
     game.moveHistory.push_back(move);
 }
 
-// Undo the last move
 bool undoMove() {
     if (game.moveHistory.empty()) {
-        return false; // No moves to undo
+        return false;
     }
     
-    // Get the last move record
     MoveRecord lastMove = game.moveHistory.back();
     game.moveHistory.pop_back();
     
-    // Get reference to current map
     TileType** map = game.activeLevel.currentMap;
     
-    // First, clear the player's current position (which is where they moved to)
     Point currentPos = {game.player.x, game.player.y};
     
-    // Restore the original tile type where the player is currently
     if (game.activeLevel.originalMap[currentPos.y][currentPos.x] == TARGET) {
         map[currentPos.y][currentPos.x] = TARGET;
     } else {
         map[currentPos.y][currentPos.x] = EMPTY;
     }
     
-    // Revert player position
     game.player.x = lastMove.playerPos.x;
     game.player.y = lastMove.playerPos.y;
     
-    // Set player's restored position
     Point oldPos = {game.player.x, game.player.y};
     if (game.activeLevel.originalMap[oldPos.y][oldPos.x] == TARGET) {
         map[oldPos.y][oldPos.x] = PLAYER_ON_TARGET;
@@ -222,19 +197,15 @@ bool undoMove() {
         map[oldPos.y][oldPos.x] = PLAYER;
     }
     
-    // If a box was moved, revert its position too
     if (lastMove.wasBoxMoved) {
-        // Remove box from its current position
         Point boxPos = lastMove.movedBoxPos;
         
-        // Check if box was on a target
         if (game.activeLevel.originalMap[boxPos.y][boxPos.x] == TARGET) {
             map[boxPos.y][boxPos.x] = TARGET;
         } else {
             map[boxPos.y][boxPos.x] = EMPTY;
         }
         
-        // Put box back to its previous position
         Point boxPrevPos = lastMove.boxPrevPos;
         if (game.activeLevel.originalMap[boxPrevPos.y][boxPrevPos.x] == TARGET) {
             map[boxPrevPos.y][boxPrevPos.x] = BOX_ON_TARGET;
@@ -242,26 +213,21 @@ bool undoMove() {
             map[boxPrevPos.y][boxPrevPos.x] = BOX;
         }
         
-        // Decrement push counter
         game.player.pushes--;
     }
     
-    // Decrement move counter
     game.player.moves--;
     
     return true;
 }
 
-// Load high scores from file
 bool loadHighScores(const char* filename) {
     std::ifstream file(filename);
     if (!file.is_open()) {
-        // If file doesn't exist, initialize with default values
         game.highScores.resize(totalLoadedLevels);
         return false;
     }
     
-    // Clear existing high scores
     game.highScores.clear();
     
     std::string line;
@@ -277,7 +243,6 @@ bool loadHighScores(const char* filename) {
         }
     }
     
-    // Make sure we have enough scores for all levels
     if (static_cast<int>(game.highScores.size()) < totalLoadedLevels) {
         game.highScores.resize(totalLoadedLevels);
     }
@@ -285,7 +250,6 @@ bool loadHighScores(const char* filename) {
     return true;
 }
 
-// Save high scores to file
 bool saveHighScores(const char* filename) {
     std::ofstream file(filename);
     if (!file.is_open()) {
@@ -299,19 +263,16 @@ bool saveHighScores(const char* filename) {
     return true;
 }
 
-// Check if current score is a new high score
 bool isNewHighScore(int levelIndex, int moves, int pushes) {
     if (levelIndex >= static_cast<int>(game.highScores.size())) {
         return false;
     }
     
-    // Check if moves count is better (lower)
     if (moves < game.highScores[levelIndex].moves) {
         game.highScores[levelIndex].moves = moves;
         game.highScores[levelIndex].pushes = pushes;
         return true;
     }
-    // If moves are equal, check if pushes is better
     else if (moves == game.highScores[levelIndex].moves && 
              pushes < game.highScores[levelIndex].pushes) {
         game.highScores[levelIndex].pushes = pushes;
@@ -321,28 +282,22 @@ bool isNewHighScore(int levelIndex, int moves, int pushes) {
     return false;
 }
 
-// Load settings from file
 bool loadSettings(const char* filename) {
     std::ifstream file(filename, std::ios::binary);
     if (!file) {
-        // If file doesn't exist, use default settings
         std::cout << "Settings file not found, using defaults." << std::endl;
         return false;
     }
     
-    // Read settings data
     try {
-        // Read skin
         int skinValue;
         file.read(reinterpret_cast<char*>(&skinValue), sizeof(int));
         game.settings.currentSkin = static_cast<PlayerSkin>(skinValue);
         
-        // Read other settings
         file.read(reinterpret_cast<char*>(&game.settings.bgmEnabled), sizeof(bool));
         file.read(reinterpret_cast<char*>(&game.settings.sfxEnabled), sizeof(bool));
         file.read(reinterpret_cast<char*>(&game.settings.fullscreenEnabled), sizeof(bool));
         
-        // Validate skin value
         if (game.settings.currentSkin < 0 || game.settings.currentSkin >= SKIN_COUNT) {
             game.settings.currentSkin = SKIN_DEFAULT;
         }
@@ -355,7 +310,6 @@ bool loadSettings(const char* filename) {
     return true;
 }
 
-// Save settings to file
 bool saveSettings(const char* filename) {
     std::ofstream file(filename, std::ios::binary);
     if (!file) {
@@ -364,11 +318,9 @@ bool saveSettings(const char* filename) {
     }
     
     try {
-        // Write skin as integer
         int skinValue = static_cast<int>(game.settings.currentSkin);
         file.write(reinterpret_cast<const char*>(&skinValue), sizeof(int));
         
-        // Write other settings
         file.write(reinterpret_cast<const char*>(&game.settings.bgmEnabled), sizeof(bool));
         file.write(reinterpret_cast<const char*>(&game.settings.sfxEnabled), sizeof(bool));
         file.write(reinterpret_cast<const char*>(&game.settings.fullscreenEnabled), sizeof(bool));

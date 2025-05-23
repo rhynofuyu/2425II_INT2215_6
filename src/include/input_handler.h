@@ -7,7 +7,6 @@
 void handleInput(SDL_Event& event);
 bool checkWinCondition(Level* level);
 
-// External variables used in input handling
 extern int currentMenuSelection;
 extern int currentSettingsSelection;
 extern bool showingTutorial;
@@ -29,4 +28,4 @@ extern int totalLoadedLevels;
 extern int currentLevelIndex;
 extern std::vector<std::string> dynamicLevelFiles;
 
-#endif // INPUT_HANDLER_H
+#endif

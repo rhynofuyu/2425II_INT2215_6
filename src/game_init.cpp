@@ -15,17 +15,14 @@
 #include "include/renderer.h"
 #include "include/solver.h"
 
-// Function declaration for checkWinCondition
 bool checkWinCondition(Level* level);
 
-// External variables that are defined elsewhere
 extern int totalLoadedLevels;
 extern int currentLevelIndex;
 extern int solverNodesExplored;
 extern int solverMaxQueueSize;
 extern int solverExecutionTimeMs;
 
-// Global variable definitions (only for variables not defined elsewhere)
 int currentMenuSelection = MENU_START_GAME;
 int currentSettingsSelection = SETTINGS_BACKGROUND_MUSIC;
 bool showingTutorial = false;
@@ -49,7 +46,6 @@ SDL_Texture* tutorialTexture = nullptr;
 
 std::vector<std::string> dynamicLevelFiles;
 
-// Function implementations moved from main.cpp
 void initGame() {
     game.currentState = MENU;
     
@@ -225,7 +221,7 @@ bool createWindowAndRenderer(SDL_Window** win, SDL_Renderer** renderer) {
         return false;
     }
     
-    window = *win; // Store the window pointer globally
+    window = *win;
     return true;
 }
 
@@ -302,7 +298,6 @@ void cleanupGameResources() {
 }
 
 void updateGame() {
-    // Check win condition
     if (game.currentState == PLAYING && checkWinCondition(&game.activeLevel)) {
         game.isNewRecord = isNewHighScore(currentLevelIndex, game.player.moves, game.player.pushes);
         

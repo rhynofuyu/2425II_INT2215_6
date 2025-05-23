@@ -3,10 +3,9 @@
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
-#include "game_structures.h"  // Include this first to ensure Player and Level are defined
+#include "game_structures.h" 
 #include "texture_manager.h"
 
-// Forward declarations if needed
 struct Level;
 struct Player;
 
@@ -23,4 +22,4 @@ void renderText(SDL_Renderer* renderer, const char* text, int x, int y, TTF_Font
 void renderLevel(SDL_Renderer* renderer, Level& level, Player& player, TextureManager& textures);  // Fixed: use references
 void renderGame(SDL_Renderer* renderer);
 
-#endif // RENDERER_H
+#endif

@@ -7,7 +7,7 @@
 #include "include/input_handler.h"
 #include "include/game_structures.h"
 #include "include/solver.h"
-#include "include/game_resources.h"  // Ensure this is included properly
+#include "include/game_resources.h"
 
 void handleInput(SDL_Event& event) {
     if (event.type != SDL_KEYDOWN) {

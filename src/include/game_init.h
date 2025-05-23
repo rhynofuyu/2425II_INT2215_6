@@ -6,13 +6,11 @@
 #include <string>
 #include "game_structures.h"
 
-// SDL initialization functions
 bool initSDL();
 void cleanupSDL();
 bool createWindowAndRenderer(SDL_Window** window, SDL_Renderer** renderer);
 void destroyWindowAndRenderer(SDL_Window* window, SDL_Renderer* renderer);
 
-// Game initialization functions
 void initGame();
 bool initGameResources(SDL_Renderer* renderer);
 void cleanupGameResources();
@@ -21,11 +19,9 @@ bool initTutorialImage(SDL_Renderer* renderer);
 void cleanupMenuResources();
 void scanLevelsDirectory(const std::string& path);
 
-// Game loop functions
 void updateGame();
 void renderGame(SDL_Renderer* renderer);
 
-// Global variables
 extern int totalLoadedLevels;
 extern int currentLevelIndex;
 extern int solverNodesExplored;
@@ -54,4 +50,4 @@ extern SDL_Texture* gameLevelBackgroundTexture;
 extern SDL_Texture* tutorialTexture;
 extern std::vector<std::string> dynamicLevelFiles;
 
-#endif // GAME_INIT_H
+#endif
