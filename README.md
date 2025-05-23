@@ -1,7 +1,6 @@
 <div align="center">
 
 # 🎮 SOKONAN
-### *Thư viện bỏ hoang đang chờ bạn khám phá!*
 
 [![C++](https://img.shields.io/badge/C++-17-blue.svg?style=flat&logo=c%2B%2B)](https://isocpp.org/)
 [![SDL2](https://img.shields.io/badge/SDL2-Graphics-green.svg?style=flat)](https://www.libsdl.org/)
@@ -42,7 +41,7 @@ Người chơi cần tìm cách sử dụng các phím điều hướng:
 ### 📊 Ngưỡng điểm tự đánh giá
 <div align="center">
   
-**8.5 - 9.0** ⭐⭐⭐⭐⭐
+**8.5 - 9.0** 
 
 </div>
 
@@ -211,18 +210,6 @@ Người chơi cần tìm cách sử dụng các phím điều hướng:
 </table>
 
 </div>
-
----
-
-<div align="center">
-
-**🎮 Chúc bạn chơi vui vẻ! 🎮**
-
-*Made with ❤️ and C++*
-
-</div>
-
-
 
 
 
