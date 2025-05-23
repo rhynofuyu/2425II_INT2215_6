@@ -160,7 +160,7 @@ Người chơi cần tìm cách sử dụng các phím điều hướng:
   <tr>
     <td align="center">
       <img src="https://github.com/user-attachments/assets/2cea8bd9-4cf4-4fc4-ab10-27d0e64c5caa" width="200"/>
-      <br><em>Settings</em>
+      <br><em>Level Finished</em>
     </td>
     <td align="center">
       <img src="https://github.com/user-attachments/assets/98e0c593-98a9-4c7b-a322-b9aa5d5f8bd0" width="200"/>
@@ -173,16 +173,16 @@ Người chơi cần tìm cách sử dụng các phím điều hướng:
   </tr>
 </table>
 
-### 🎯 Advanced Features
+### 🎯 For fun
 <table>
   <tr>
     <td align="center">
       <img src="https://github.com/user-attachments/assets/5932cde7-af5d-47a4-b21e-66701dabab52" width="250"/>
-      <br><em>Solver Algorithm</em>
+      <br><em>Bombarido Crocodilo</em>
     </td>
     <td align="center">
       <img src="https://github.com/user-attachments/assets/c8e53ccc-05fb-4df2-914f-ca32f59739e2" width="250"/>
-      <br><em>Statistics</em>
+      <br><em>When Event</em>
     </td>
   </tr>
 </table>
@@ -191,12 +191,8 @@ Người chơi cần tìm cách sử dụng các phím điều hướng:
 <table>
   <tr>
     <td align="center">
-      <img src="https://github.com/user-attachments/assets/91c112c3-8c17-41ba-a9b1-1ddf75b23e2e" width="200"/>
-      <br><em>Level Complete</em>
-    </td>
-    <td align="center">
       <img src="https://github.com/user-attachments/assets/23fe2ba2-22dc-4049-ba44-2a57bcbd3776" width="200"/>
-      <br><em>High Scores</em>
+      <br><em>Settings</em>
     </td>
     <td align="center">
       <img src="https://github.com/user-attachments/assets/0cdff71a-6ab5-44cd-b662-f465771fbcc6" width="200"/>
@@ -204,7 +200,7 @@ Người chơi cần tìm cách sử dụng các phím điều hướng:
     </td>
     <td align="center">
       <img src="https://github.com/user-attachments/assets/072410e5-8ee6-49cc-9c89-e44bb2ef0a0c" width="200"/>
-      <br><em>Final Level</em>
+      <br><em>Finished All Level</em>
     </td>
   </tr>
 </table>
